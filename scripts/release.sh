@@ -20,7 +20,7 @@ fi
 sed -i.bak "0,/^version = .*/s//version = \"$v\"/" Cargo.toml && rm Cargo.toml.bak
 cargo test --workspace
 git add -A
-git commit -m "Version $v" -m "Claude-Session: https://claude.ai/code/session_01PTUwj9ZjSqgRSQvJqwzFam"
+git commit -m "Version $v"
 git tag -a "v$v" -m "PicSim $v"
 git push origin main "v$v"
 echo "v$v gepusht. Das Release erscheint in ein paar Minuten auf GitHub."
