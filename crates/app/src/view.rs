@@ -8,31 +8,30 @@ const CHANGED: Color32 = Color32::from_rgb(200, 30, 30);
 const CURRENT_LINE: Color32 = Color32::from_rgb(150, 220, 160);
 const BREAKPOINT: Color32 = Color32::from_rgb(210, 40, 40);
 
-pub fn memory_panel(app: &mut PicSimApp, ui: &mut egui::Ui) {
-    ui.label(RichText::new("Datenspeicher").strong());
-    ram_grid(app, ui);
-    ui.add_space(6.0);
-    ui.separator();
-    egui::ScrollArea::vertical().id_salt("sfr").show(ui, |ui| sfr(app, ui));
-}
-
-fn ram_grid(app: &mut PicSimApp, ui: &mut egui::Ui) {
-    egui::ScrollArea::vertical().id_salt("ram").max_height(300.0).show(ui, |ui| {
-        egui::Grid::new("ramgrid").spacing([6.0, 2.0]).striped(true).show(ui, |ui| {
-            ui.label("");
-            for c in 0..8 {
-                ui.label(RichText::new(format!("{c:02X}")).monospace().weak());
-            }
-            ui.end_row();
-            for row in 0..32u8 {
-                ui.label(RichText::new(format!("{:02X}", row * 8)).monospace().weak());
-                for col in 0..8u8 {
-                    ram_cell(app, ui, row * 8 + col);
-                }
-                ui.end_row();
-            }
+/// Fenster "Datenspeicher".
+pub fn ram(app: &mut PicSimApp, ui: &mut egui::Ui) {
+    egui::ScrollArea::both()
+        .id_salt("ram")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui::Grid::new("ramgrid")
+                .spacing([6.0, 2.0])
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.label("");
+                    for c in 0..8 {
+                        ui.label(RichText::new(format!("{c:02X}")).monospace().weak());
+                    }
+                    ui.end_row();
+                    for row in 0..32u8 {
+                        ui.label(RichText::new(format!("{:02X}", row * 8)).monospace().weak());
+                        for col in 0..8u8 {
+                            ram_cell(app, ui, row * 8 + col);
+                        }
+                        ui.end_row();
+                    }
+                });
         });
-    });
 }
 
 fn ram_cell(app: &mut PicSimApp, ui: &mut egui::Ui, addr: u8) {
@@ -68,7 +67,9 @@ fn ram_cell(app: &mut PicSimApp, ui: &mut egui::Ui, addr: u8) {
     if r.clicked() && implemented {
         app.ram_edit = Some((addr, format!("{v:02X}")));
     }
-    r.on_hover_text(format!("Adresse {addr:02X}h: {v} dezimal, {v:08b}b. Klicken zum Ändern"));
+    r.on_hover_text(format!(
+        "Adresse {addr:02X}h: {v} dezimal, {v:08b}b. Klicken zum Ändern"
+    ));
 }
 
 /// Acht anklickbare Bits eines Registers.
@@ -82,7 +83,14 @@ fn bit_row(app: &mut PicSimApp, ui: &mut egui::Ui, id: &str, addr: u8, names: [&
         for i in 0..8u8 {
             let bit = 7 - i;
             let on = v >> bit & 1 != 0;
-            let r = ui.add(egui::Label::new(RichText::new(if on { "1" } else { "0" }).monospace().strong()).sense(Sense::click()));
+            let r = ui.add(
+                egui::Label::new(
+                    RichText::new(if on { "1" } else { "0" })
+                        .monospace()
+                        .strong(),
+                )
+                .sense(Sense::click()),
+            );
             if r.clicked() {
                 app.board.cpu.poke(addr, v ^ (1 << bit));
             }
@@ -102,9 +110,16 @@ fn reg_grid(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
     });
 }
 
-fn sfr(app: &mut PicSimApp, ui: &mut egui::Ui) {
+/// Fenster "Spezialfunktionsregister".
+pub fn sfr(app: &mut PicSimApp, ui: &mut egui::Ui) {
+    egui::ScrollArea::both()
+        .id_salt("sfr")
+        .auto_shrink([false, false])
+        .show(ui, |ui| sfr_content(app, ui));
+}
+
+fn sfr_content(app: &mut PicSimApp, ui: &mut egui::Ui) {
     let cpu = &app.board.cpu;
-    ui.label(RichText::new("Spezialfunktionsregister").strong());
     let visible = [
         ("W-Reg", format!("{:02X}", cpu.w)),
         ("FSR", format!("{:02X}", cpu.peek(0x04))),
@@ -131,11 +146,31 @@ fn sfr(app: &mut PicSimApp, ui: &mut egui::Ui) {
     });
     ui.add_space(4.0);
     ui.label("Status");
-    bit_row(app, ui, "status_bits", STATUS, ["IRP", "RP1", "RP0", "TO", "PD", "Z", "DC", "C"]);
+    bit_row(
+        app,
+        ui,
+        "status_bits",
+        STATUS,
+        ["IRP", "RP1", "RP0", "TO", "PD", "Z", "DC", "C"],
+    );
     ui.label("Option");
-    bit_row(app, ui, "option_bits", OPTION, ["RBP", "IntEdg", "T0CS", "T0SE", "PSA", "PS2", "PS1", "PS0"]);
+    bit_row(
+        app,
+        ui,
+        "option_bits",
+        OPTION,
+        ["RBP", "IntEdg", "T0CS", "T0SE", "PSA", "PS2", "PS1", "PS0"],
+    );
     ui.label("INTCON");
-    bit_row(app, ui, "intcon_bits", INTCON, ["GIE", "EEIE", "T0IE", "INTE", "RBIE", "T0IF", "INTF", "RBIF"]);
+    bit_row(
+        app,
+        ui,
+        "intcon_bits",
+        INTCON,
+        [
+            "GIE", "EEIE", "T0IE", "INTE", "RBIE", "T0IF", "INTF", "RBIF",
+        ],
+    );
 
     ui.add_space(4.0);
     ui.label("Stack");
@@ -153,15 +188,17 @@ fn sfr(app: &mut PicSimApp, ui: &mut egui::Ui) {
     ui.add_space(4.0);
     ui.label("EEPROM");
     let ee = app.board.cpu.eeprom;
-    egui::Grid::new("eeprom").spacing([4.0, 0.0]).show(ui, |ui| {
-        for row in 0..8 {
-            ui.label(RichText::new(format!("{:02X}", row * 8)).monospace().weak());
-            for c in 0..8 {
-                ui.label(RichText::new(format!("{:02X}", ee[row * 8 + c])).monospace());
+    egui::Grid::new("eeprom")
+        .spacing([4.0, 0.0])
+        .show(ui, |ui| {
+            for row in 0..8 {
+                ui.label(RichText::new(format!("{:02X}", row * 8)).monospace().weak());
+                for c in 0..8 {
+                    ui.label(RichText::new(format!("{:02X}", ee[row * 8 + c])).monospace());
+                }
+                ui.end_row();
             }
-            ui.end_row();
-        }
-    });
+        });
 }
 
 pub fn listing(app: &mut PicSimApp, ui: &mut egui::Ui) {
@@ -169,7 +206,7 @@ pub fn listing(app: &mut PicSimApp, ui: &mut egui::Ui) {
     let n = app.board.listing.lines.len();
     if n == 0 {
         ui.centered_and_justified(|ui| {
-            ui.label("Keine LST-Datei geladen. Datei → LST-Datei öffnen, oder im Editor einen Quelltext assemblieren.");
+            ui.label("Keine LST-Datei geladen. Über Datei > LST-Datei öffnen laden oder im Editor einen Quelltext assemblieren.");
         });
         return;
     }
@@ -177,7 +214,9 @@ pub fn listing(app: &mut PicSimApp, ui: &mut egui::Ui) {
     let row_h = ui.ctx().fonts_mut(|f| f.row_height(&font)).max(16.0);
     ui.spacing_mut().item_spacing.y = 0.0;
 
-    let mut area = egui::ScrollArea::both().id_salt("listing").auto_shrink([false, false]);
+    let mut area = egui::ScrollArea::both()
+        .id_salt("listing")
+        .auto_shrink([false, false]);
     if app.scroll_to_pc {
         if let Some(line) = current {
             let visible = ui.available_height();

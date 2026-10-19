@@ -1,5 +1,20 @@
 # Änderungen
 
+## 0.3.0
+
+Alles lässt sich selbst anordnen und in der Größe ändern:
+
+- Jeder Bereich ist ein eigenes Fenster: Datenspeicher, Spezialfunktionsregister, Ports, LCD, 7-Segment, Schalter, Taster, LED-Array, Schrittmotor, Funktionsgenerator, Listing und Steuerpult. Fenster an der Titelleiste verschieben, an der Ecke unten rechts größer oder kleiner ziehen, mit dem Pfeil einklappen, mit dem Kreuz ausblenden
+- Gezeichnete Bauteile (LCD, 7-Segment, Schalter, Taster, LEDs, Schrittmotor) wachsen und schrumpfen mit dem Fenster, ebenso Ampelkreuzung und Getränkeautomat
+- Lage und Größe aller Fenster bleiben beim nächsten Start erhalten
+- Menü Ansicht: Fenster ein- und ausblenden, "Alle Fenster anzeigen", "Layout zurücksetzen"
+- Schriftgröße weiter über Ansicht oder mit Strg + und Strg -
+- Editor, Einstellungen und Applikationen liegen immer vor den Bereichsfenstern
+- Wird das Programmfenster größer oder kleiner, wachsen und schrumpfen alle Fenster anteilig mit, statt sich am Rand zu stapeln
+- Einstellungen der Bauteile jetzt per Rechtsklick auf das Bauteil (wie im Original), dadurch lassen sich die Fenster schmaler ziehen
+- Neues Nachschlagefenster (Hilfe oder Button "Befehle" im Editor): alle Befehle mit Opcode, Zyklen und Flags (Datenblatt Tabelle 9-2), Pseudobefehle und Direktiven, dazu die Registerübersicht (Tabelle 4-1) mit den aktuellen Werten aus der Simulation
+- Im Nachschlagefenster ist alles anklickbar: Befehle, Register und Bits werden an der Cursorposition im Editor eingefügt, Bits gleich passend zum Assembler (z.B. STATUS,RP0, PORTB,0 oder GIE)
+
 ## 0.2.1
 
 - Fehler behoben: Bei Go blieb die grüne Zeile im Listing scheinbar stehen, weil jedes Bild nach gleich vielen Befehlen endete. Jetzt wandert sie mit dem Programm, und das Listing scrollt mit

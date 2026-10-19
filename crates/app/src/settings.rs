@@ -40,7 +40,7 @@ pub fn pin_combo(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, 
 }
 
 fn window<'a>(title: &'a str, open: &'a mut bool) -> egui::Window<'a> {
-    egui::Window::new(title).open(open).collapsible(false).resizable(false)
+    egui::Window::new(title).order(egui::Order::Foreground).open(open).collapsible(false).resizable(false)
 }
 
 impl Dialogs {
@@ -249,7 +249,7 @@ impl Dialogs {
     }
 
     pub fn show_info(&mut self, ctx: &egui::Context) {
-        egui::Window::new("Kurzanleitung").open(&mut self.help).default_width(520.0).show(ctx, |ui| {
+        egui::Window::new("Kurzanleitung").order(egui::Order::Foreground).open(&mut self.help).default_width(520.0).show(ctx, |ui| {
             egui::ScrollArea::vertical().max_height(500.0).show(ui, |ui| {
                 ui.label(RichText::new("Ablauf").strong());
                 ui.label("1. Quelltext bearbeiten öffnet den Editor. Dort schreibst du das Programm (.src).");
@@ -277,13 +277,13 @@ impl Dialogs {
                 ui.label("• RAM-Werte anklicken, Hexwert eingeben, Enter.");
                 ui.label("• Bits in Status, Option und INTCON sowie Pins der Ports lassen sich anklicken.");
                 ui.label("• Rot markierte RAM-Werte haben sich beim letzten Schritt geändert.");
-                ui.label("• Die Einstellungen liegen in picsimu.ini. Über Datei → Einstellungen importieren lässt sich die INI des alten Programms übernehmen.");
+                ui.label("• Die Einstellungen liegen in picsimu.ini. Über Datei > Einstellungen importieren lässt sich die INI des alten Programms übernehmen.");
                 ui.add_space(6.0);
                 ui.label(RichText::new("Assembler").strong());
                 ui.label("Kompatibel zu iL_ASS16: Labels in Spalte 1, EQU, ORG, END, DEVICE, CONFIG, INCLUDE, IF/ELSEIF/ELSE/ENDIF. Zahlen als 35, 0FFH, 0x1F, 01B, 'A'. Bit-Symbole wie TASTE EQU 6,4 für btfsc TASTE. Die Register des 16F84 sind vordefiniert (STATUS, PORTB, GIE …), eigene EQUs gehen vor.");
             });
         });
-        egui::Window::new("Info").open(&mut self.about).collapsible(false).resizable(false).show(ctx, |ui| {
+        egui::Window::new("Info").order(egui::Order::Foreground).open(&mut self.about).collapsible(false).resizable(false).show(ctx, |ui| {
             ui.heading(format!("PicSim {}", env!("CARGO_PKG_VERSION")));
             ui.label("Simulator für den PIC16F84 mit Assembler und Editor.");
             ui.label("Neu geschrieben nach dem Vorbild von PicSimu 0.51.");

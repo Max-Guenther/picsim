@@ -5,8 +5,11 @@
 
 mod app;
 mod apps;
+mod canvas;
 mod editor;
+mod layout;
 mod periph;
+mod reference;
 mod settings;
 mod update;
 mod view;

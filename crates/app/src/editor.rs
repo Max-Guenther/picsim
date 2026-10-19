@@ -31,6 +31,8 @@ pub enum EditorAction {
     /// Übersetzt und LST geschrieben: in den Simulator laden.
     Loaded(PathBuf),
     Saved,
+    /// Nachschlagefenster mit den Befehlen öffnen.
+    ShowReference,
 }
 
 pub struct Editor {
@@ -214,7 +216,7 @@ impl Editor {
         }
 
         let mut open = true;
-        egui::Window::new(self.title())
+        egui::Window::new(self.title()).order(egui::Order::Foreground)
             .id(egui::Id::unique("editor_window"))
             .open(&mut open)
             .default_size([780.0, 640.0])
@@ -239,6 +241,9 @@ impl Editor {
                     let asm_btn = egui::Button::new(RichText::new("Assemblieren & Laden").strong());
                     if ui.add(asm_btn).on_hover_text("F5 oder Strg+B").clicked() {
                         action = self.assemble();
+                    }
+                    if ui.button("Befehle").on_hover_text("Befehlsübersicht und Registertabelle").clicked() {
+                        action = Some(EditorAction::ShowReference);
                     }
                 });
                 if !self.message.is_empty() {
@@ -314,6 +319,33 @@ impl Editor {
         });
     }
 
+    /// Fügt Text an der Cursorposition ein (ersetzt eine Auswahl) und öffnet
+    /// den Editor. `instruction`: Am Zeilenanfang wird ein Tab davorgesetzt,
+    /// damit der Befehl nicht als Label gilt.
+    pub fn insert(&mut self, ctx: &egui::Context, text: &str, instruction: bool) {
+        let total = self.text.chars().count();
+        let (start, end) = egui::TextEdit::load_state(ctx, self.text_id)
+            .and_then(|s| s.cursor.char_range())
+            .map(|r| {
+                let (a, b) = (r.primary.index.0, r.secondary.index.0);
+                (a.min(b).min(total), a.max(b).min(total))
+            })
+            .unwrap_or((total, total));
+        let byte = |ci: usize| self.text.char_indices().nth(ci).map(|(b, _)| b).unwrap_or(self.text.len());
+        let (b0, b1) = (byte(start), byte(end));
+        let line_start = b0 == 0 || self.text[..b0].ends_with('\n');
+        let ins = if instruction && line_start { format!("\t{text}") } else { text.to_string() };
+        self.text.replace_range(b0..b1, &ins);
+
+        let cursor = start + ins.chars().count();
+        let mut state = egui::TextEdit::load_state(ctx, self.text_id).unwrap_or_default();
+        let c = egui::text::CCursor::new(cursor);
+        state.cursor.set_char_range(Some(egui::text::CCursorRange::one(c)));
+        state.store(ctx, self.text_id);
+        ctx.memory_mut(|m| m.request_focus(self.text_id));
+        self.open = true;
+    }
+
     fn place_cursor(&self, ctx: &egui::Context, line: usize) {
         let idx: usize = self.text.split('\n').take(line.saturating_sub(1)).map(|l| l.chars().count() + 1).sum();
         if let Some(mut state) = egui::TextEdit::load_state(ctx, self.text_id) {
@@ -334,7 +366,7 @@ impl Editor {
 
     fn confirm_dialog(&mut self, ctx: &egui::Context) {
         let Some(pending) = self.confirm_discard else { return };
-        egui::Window::new("Änderungen verwerfen?")
+        egui::Window::new("Änderungen verwerfen?").order(egui::Order::Foreground)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])

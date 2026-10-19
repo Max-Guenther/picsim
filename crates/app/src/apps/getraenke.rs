@@ -4,6 +4,7 @@
 //! Geldrückgabe Eingänge. Motoren, Klappen der Zwischenkasse und die
 //! Kreditanzeige sind Ausgänge.
 
+use crate::canvas::Canvas;
 use crate::settings::pin_combo;
 use eframe::egui::{self, pos2, vec2, Color32, Pos2, Rect, RichText, Sense, Stroke};
 use picsim_core::devices::level;
@@ -225,29 +226,38 @@ impl Getraenke {
 
     pub fn show(&mut self, ctx: &egui::Context, board: &Board) -> bool {
         let mut open = self.open;
-        egui::Window::new("Getränkeautomat").open(&mut open).resizable(false).show(ctx, |ui| {
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    ui.label(RichText::new("Münzen").strong());
-                    ui.label(RichText::new("in den Schlitz ziehen").small());
-                    for c in 0..3 {
-                        self.coin_widget(ui, c);
-                    }
-                    ui.add_space(12.0);
-                    ui.label(RichText::new(format!("Kasse: {}", euro(sum(&self.kasse)))).strong());
-                    if ui.small_button("Kasse leeren").clicked() {
-                        self.kasse.clear();
-                    }
-                    ui.add_space(12.0);
-                    ui.label(RichText::new("Shift+Klick auf eine\nWahltaste füllt den Schacht.").small());
-                    ui.add_space(8.0);
-                    if ui.button("Einstellungen…").clicked() {
-                        self.settings = true;
-                    }
+        egui::Window::new("Getränkeautomat").order(egui::Order::Foreground)
+            .open(&mut open)
+            .resizable(true)
+            .default_size([520.0, 480.0])
+            .show(ctx, |ui| {
+                ui.horizontal_top(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Münzen").strong());
+                        ui.label(RichText::new("in den Schlitz ziehen").small());
+                        for c in 0..3 {
+                            self.coin_widget(ui, c);
+                        }
+                        ui.add_space(12.0);
+                        ui.label(
+                            RichText::new(format!("Kasse: {}", euro(sum(&self.kasse)))).strong(),
+                        );
+                        if ui.small_button("Kasse leeren").clicked() {
+                            self.kasse.clear();
+                        }
+                        ui.add_space(12.0);
+                        ui.label(
+                            RichText::new("Shift+Klick auf eine\nWahltaste füllt den Schacht.")
+                                .small(),
+                        );
+                        ui.add_space(8.0);
+                        if ui.button("Einstellungen…").clicked() {
+                            self.settings = true;
+                        }
+                    });
+                    self.draw(ui, board);
                 });
-                self.draw(ui, board);
             });
-        });
         self.open = open;
         self.settings_window(ctx)
     }
@@ -265,13 +275,20 @@ impl Getraenke {
         let draw = |p: &egui::Painter, at: Pos2| {
             p.circle_filled(at, r, outer);
             p.circle_filled(at, r * 0.7, inner);
-            p.text(at, egui::Align2::CENTER_CENTER, name, egui::FontId::proportional(9.0), Color32::BLACK);
+            p.text(
+                at,
+                egui::Align2::CENTER_CENTER,
+                name,
+                egui::FontId::proportional(9.0),
+                Color32::BLACK,
+            );
         };
         draw(ui.painter(), rect.center());
         let resp = resp.on_hover_text(format!("{name}: in den Münzschlitz ziehen"));
         if resp.dragged() {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                let layer = egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique(("coin_drag", c)));
+                let layer =
+                    egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique(("coin_drag", c)));
                 draw(&ui.ctx().layer_painter(layer), pos);
             }
         }
@@ -285,8 +302,9 @@ impl Getraenke {
     }
 
     fn draw(&mut self, ui: &mut egui::Ui, board: &Board) {
-        let (rect, resp) = ui.allocate_exact_size(vec2(400.0, 460.0), Sense::click());
-        let p = ui.painter_at(rect);
+        let canvas = Canvas::new(ui, vec2(400.0, 460.0), Sense::click(), 0.0);
+        let rect = canvas.rect;
+        let p = &canvas.painter;
         let pins = board.cpu.pins();
         let font = egui::FontId::proportional;
         self.regions.clear();
@@ -303,13 +321,25 @@ impl Getraenke {
             let (name, price, col) = PRODUCTS[i];
             for b in 0..self.stock[i] {
                 let y = shaft.bottom() - 8.0 - b as f32 * 30.0;
-                let bottle = Rect::from_center_size(pos2(shaft.center().x - 3.0, y - 12.0), vec2(36.0, 24.0));
+                let bottle = Rect::from_center_size(
+                    pos2(shaft.center().x - 3.0, y - 12.0),
+                    vec2(36.0, 24.0),
+                );
                 p.rect_filled(bottle, 6.0, col);
-                let neck = Rect::from_center_size(pos2(bottle.right() + 4.0, bottle.center().y), vec2(8.0, 8.0));
+                let neck = Rect::from_center_size(
+                    pos2(bottle.right() + 4.0, bottle.center().y),
+                    vec2(8.0, 8.0),
+                );
                 p.rect_filled(neck, 2.0, col);
             }
             if self.vending[i].is_some() {
-                p.text(shaft.center_top() + vec2(0.0, 10.0), egui::Align2::CENTER_CENTER, "Motor", font(11.0), Color32::RED);
+                p.text(
+                    shaft.center_top() + vec2(0.0, 10.0),
+                    egui::Align2::CENTER_CENTER,
+                    "Motor",
+                    font(11.0),
+                    Color32::RED,
+                );
             }
             let btn_c = pos2(shaft.center().x, shaft.bottom() + 26.0);
             let fill = if self.stock[i] == 0 {
@@ -321,127 +351,247 @@ impl Getraenke {
             };
             p.circle_filled(btn_c, 14.0, fill);
             p.circle_stroke(btn_c, 14.0, Stroke::new(1.5, Color32::BLACK));
-            p.text(btn_c + vec2(0.0, 24.0), egui::Align2::CENTER_CENTER, name, font(12.0), Color32::WHITE);
-            p.text(btn_c + vec2(0.0, 38.0), egui::Align2::CENTER_CENTER, price, font(11.0), Color32::from_gray(230));
-            self.regions.push((Rect::from_center_size(btn_c, vec2(30.0, 30.0)), Click::Product(i)));
+            p.text(
+                btn_c + vec2(0.0, 24.0),
+                egui::Align2::CENTER_CENTER,
+                name,
+                font(12.0),
+                Color32::WHITE,
+            );
+            p.text(
+                btn_c + vec2(0.0, 38.0),
+                egui::Align2::CENTER_CENTER,
+                price,
+                font(11.0),
+                Color32::from_gray(230),
+            );
+            self.regions.push((
+                Rect::from_center_size(btn_c, vec2(30.0, 30.0)),
+                Click::Product(i),
+            ));
         }
 
         // Rechte Spalte: Münzschlitz, Kreditanzeige, Geldrückgabe
         let col_x = front.right() - 72.0;
-        self.slot = Rect::from_min_size(pos2(col_x + 20.0, front.top() + 20.0), vec2(10.0, 44.0));
+        let slot = Rect::from_min_size(pos2(col_x + 20.0, front.top() + 20.0), vec2(10.0, 44.0));
+        // Für das Ablegen der Münzen: Schlitz in Bildschirmkoordinaten
+        self.slot = Rect::from_min_max(
+            rect.min + (slot.min - rect.min) * canvas.k,
+            rect.min + (slot.max - rect.min) * canvas.k,
+        );
         let accept = !self.tray_busy();
-        p.rect_filled(self.slot.expand(6.0), 4.0, Color32::from_gray(40));
-        p.rect_filled(self.slot, 2.0, if accept { Color32::BLACK } else { Color32::from_rgb(120, 0, 0) });
-        p.text(self.slot.center_bottom() + vec2(0.0, 14.0), egui::Align2::CENTER_CENTER, "Münzen", font(11.0), Color32::WHITE);
+        p.rect_filled(slot.expand(6.0), 4.0, Color32::from_gray(40));
+        p.rect_filled(
+            slot,
+            2.0,
+            if accept {
+                Color32::BLACK
+            } else {
+                Color32::from_rgb(120, 0, 0)
+            },
+        );
+        p.text(
+            slot.center_bottom() + vec2(0.0, 14.0),
+            egui::Align2::CENTER_CENTER,
+            "Münzen",
+            font(11.0),
+            Color32::WHITE,
+        );
         if !self.falling.is_empty() {
-            p.circle_filled(self.slot.center(), 6.0, Color32::from_rgb(210, 175, 60));
+            p.circle_filled(slot.center(), 6.0, Color32::from_rgb(210, 175, 60));
         }
         for (k, label) in ["0,50", "1,00", "2,00"].iter().enumerate() {
             let c = pos2(col_x + 25.0, front.top() + 110.0 + k as f32 * 22.0);
             let on = high(&pins, self.pins.kredit[k]);
-            crate::periph::draw_led(&p, c - vec2(16.0, 0.0), 6.0, Color32::from_rgb(255, 210, 20), on);
-            p.text(c + vec2(4.0, 0.0), egui::Align2::LEFT_CENTER, *label, font(11.0), Color32::WHITE);
+            crate::periph::draw_led(
+                p,
+                c - vec2(16.0, 0.0),
+                6.0,
+                Color32::from_rgb(255, 210, 20),
+                on,
+            );
+            p.text(
+                c + vec2(4.0, 0.0),
+                egui::Align2::LEFT_CENTER,
+                *label,
+                font(11.0),
+                Color32::WHITE,
+            );
         }
         let ab = Rect::from_min_size(pos2(col_x, front.top() + 180.0), vec2(64.0, 30.0));
-        let ab_fill = if self.abbruch_t > 0.0 { Color32::from_rgb(255, 220, 60) } else { Color32::from_gray(210) };
+        let ab_fill = if self.abbruch_t > 0.0 {
+            Color32::from_rgb(255, 220, 60)
+        } else {
+            Color32::from_gray(210)
+        };
         p.rect_filled(ab, 5.0, ab_fill);
-        p.text(ab.center(), egui::Align2::CENTER_CENTER, "Rückgabe", font(11.0), Color32::BLACK);
+        p.text(
+            ab.center(),
+            egui::Align2::CENTER_CENTER,
+            "Rückgabe",
+            font(11.0),
+            Color32::BLACK,
+        );
         self.regions.push((ab, Click::Abbruch));
 
         // Zwischenkasse mit Klappen
         let zk = Rect::from_min_size(pos2(col_x - 4.0, front.top() + 230.0), vec2(72.0, 50.0));
         p.rect_filled(zk, 4.0, Color32::from_gray(60));
-        p.text(zk.center_top() + vec2(0.0, 9.0), egui::Align2::CENTER_CENTER, "Zwischenkasse", font(9.0), Color32::WHITE);
-        p.text(zk.center() + vec2(0.0, 8.0), egui::Align2::CENTER_CENTER, euro(sum(&self.zwischenkasse)), font(13.0), Color32::WHITE);
-        let flap = |open: bool| if open { Color32::from_rgb(60, 220, 80) } else { Color32::from_gray(150) };
+        p.text(
+            zk.center_top() + vec2(0.0, 9.0),
+            egui::Align2::CENTER_CENTER,
+            "Zwischenkasse",
+            font(9.0),
+            Color32::WHITE,
+        );
+        p.text(
+            zk.center() + vec2(0.0, 8.0),
+            egui::Align2::CENTER_CENTER,
+            euro(sum(&self.zwischenkasse)),
+            font(13.0),
+            Color32::WHITE,
+        );
+        let flap = |open: bool| {
+            if open {
+                Color32::from_rgb(60, 220, 80)
+            } else {
+                Color32::from_gray(150)
+            }
+        };
         let to_kasse = flap(high(&pins, self.pins.kasse[0]));
         let to_back = flap(high(&pins, self.pins.kasse[1]));
-        p.text(zk.left_bottom() + vec2(0.0, 12.0), egui::Align2::LEFT_CENTER, "Kasse", font(10.0), to_kasse);
-        p.text(zk.right_bottom() + vec2(0.0, 12.0), egui::Align2::RIGHT_CENTER, "Rückgabe", font(10.0), to_back);
+        p.text(
+            zk.left_bottom() + vec2(0.0, 12.0),
+            egui::Align2::LEFT_CENTER,
+            "Kasse",
+            font(10.0),
+            to_kasse,
+        );
+        p.text(
+            zk.right_bottom() + vec2(0.0, 12.0),
+            egui::Align2::RIGHT_CENTER,
+            "Rückgabe",
+            font(10.0),
+            to_back,
+        );
 
         // Ausgabefach
-        let tray = Rect::from_min_size(pos2(front.left() + 10.0, front.bottom() - 110.0), vec2(front.width() - 20.0, 70.0));
+        let tray = Rect::from_min_size(
+            pos2(front.left() + 10.0, front.bottom() - 110.0),
+            vec2(front.width() - 20.0, 70.0),
+        );
         p.rect_filled(tray, 6.0, Color32::from_gray(25));
-        p.text(tray.left_top() + vec2(8.0, 10.0), egui::Align2::LEFT_CENTER, "Ausgabefach", font(10.0), Color32::GRAY);
+        p.text(
+            tray.left_top() + vec2(8.0, 10.0),
+            egui::Align2::LEFT_CENTER,
+            "Ausgabefach",
+            font(10.0),
+            Color32::GRAY,
+        );
         if let Some(i) = self.bottle_out {
             let b = Rect::from_center_size(tray.center() - vec2(60.0, -4.0), vec2(60.0, 26.0));
             p.rect_filled(b, 7.0, PRODUCTS[i].2);
-            p.text(b.center(), egui::Align2::CENTER_CENTER, PRODUCTS[i].0, font(11.0), Color32::WHITE);
+            p.text(
+                b.center(),
+                egui::Align2::CENTER_CENTER,
+                PRODUCTS[i].0,
+                font(11.0),
+                Color32::WHITE,
+            );
         }
         for (k, &c) in self.rueckgabe.iter().enumerate().take(12) {
-            let at = pos2(tray.center().x + 30.0 + k as f32 * 12.0, tray.center().y + 4.0);
+            let at = pos2(
+                tray.center().x + 30.0 + k as f32 * 12.0,
+                tray.center().y + 4.0,
+            );
             p.circle_filled(at, COINS[c].2 * 0.7, Color32::from_rgb(210, 175, 60));
         }
-        let klappe = Rect::from_min_size(pos2(tray.left(), tray.bottom() + 6.0), vec2(tray.width(), 24.0));
+        let klappe = Rect::from_min_size(
+            pos2(tray.left(), tray.bottom() + 6.0),
+            vec2(tray.width(), 24.0),
+        );
         p.rect_filled(klappe, 4.0, Color32::from_gray(200));
-        p.text(klappe.center(), egui::Align2::CENTER_CENTER, "Klappe (Ware und Geld entnehmen)", font(12.0), Color32::BLACK);
+        p.text(
+            klappe.center(),
+            egui::Align2::CENTER_CENTER,
+            "Klappe (Ware und Geld entnehmen)",
+            font(12.0),
+            Color32::BLACK,
+        );
         self.regions.push((klappe, Click::Klappe));
 
-        if resp.clicked() {
-            if let Some(pos) = resp.interact_pointer_pos() {
-                let shift = ui.input(|i| i.modifiers.shift);
-                if let Some(&(_, what)) = self.regions.iter().find(|(r, _)| r.contains(pos)) {
-                    self.click(what, shift);
-                }
+        let click = canvas.click_pos();
+        canvas.finish();
+        if let Some(pos) = click {
+            let shift = ui.input(|i| i.modifiers.shift);
+            if let Some(&(_, what)) = self.regions.iter().find(|(r, _)| r.contains(pos)) {
+                self.click(what, shift);
             }
         }
     }
 
     fn settings_window(&mut self, ctx: &egui::Context) -> bool {
         let mut changed = false;
-        egui::Window::new("Getränkeautomat: Pins").open(&mut self.settings).resizable(false).show(ctx, |ui| {
-            let p = &mut self.pins;
-            ui.columns(2, |cols| {
-                egui::Grid::new("gr_in").show(&mut cols[0], |ui| {
-                    ui.label(RichText::new("Eingänge des PIC").strong());
-                    ui.end_row();
-                    for (i, (name, _, _)) in COINS.iter().enumerate() {
-                        ui.label(format!("Münze {name}"));
-                        changed |= pin_combo(ui, ("gm", i), &mut p.muenze[i]);
+        egui::Window::new("Getränkeautomat: Pins").order(egui::Order::Foreground)
+            .open(&mut self.settings)
+            .resizable(false)
+            .show(ctx, |ui| {
+                let p = &mut self.pins;
+                ui.columns(2, |cols| {
+                    egui::Grid::new("gr_in").show(&mut cols[0], |ui| {
+                        ui.label(RichText::new("Eingänge des PIC").strong());
                         ui.end_row();
-                    }
-                    for i in 0..4 {
-                        ui.label(format!("Taste {}", PRODUCTS[i].0));
-                        changed |= pin_combo(ui, ("gt", i), &mut p.taster[i]);
+                        for (i, (name, _, _)) in COINS.iter().enumerate() {
+                            ui.label(format!("Münze {name}"));
+                            changed |= pin_combo(ui, ("gm", i), &mut p.muenze[i]);
+                            ui.end_row();
+                        }
+                        for i in 0..4 {
+                            ui.label(format!("Taste {}", PRODUCTS[i].0));
+                            changed |= pin_combo(ui, ("gt", i), &mut p.taster[i]);
+                            ui.end_row();
+                        }
+                        for i in 0..4 {
+                            ui.label(format!("Leer {}", PRODUCTS[i].0));
+                            changed |= pin_combo(ui, ("gs", i), &mut p.sensor[i]);
+                            ui.end_row();
+                        }
+                        ui.label("Geldrückgabe");
+                        changed |= pin_combo(ui, "gab", &mut p.abbruch);
                         ui.end_row();
-                    }
-                    for i in 0..4 {
-                        ui.label(format!("Leer {}", PRODUCTS[i].0));
-                        changed |= pin_combo(ui, ("gs", i), &mut p.sensor[i]);
+                    });
+                    egui::Grid::new("gr_out").show(&mut cols[1], |ui| {
+                        ui.label(RichText::new("Ausgänge des PIC").strong());
                         ui.end_row();
-                    }
-                    ui.label("Geldrückgabe");
-                    changed |= pin_combo(ui, "gab", &mut p.abbruch);
-                    ui.end_row();
+                        for i in 0..4 {
+                            ui.label(format!("Motor {}", PRODUCTS[i].0));
+                            changed |= pin_combo(ui, ("gmo", i), &mut p.motor[i]);
+                            ui.end_row();
+                        }
+                        ui.label("Klappe zur Kasse");
+                        changed |= pin_combo(ui, "gk1", &mut p.kasse[0]);
+                        ui.end_row();
+                        ui.label("Klappe zur Rückgabe");
+                        changed |= pin_combo(ui, "gk2", &mut p.kasse[1]);
+                        ui.end_row();
+                        for (i, v) in ["0,50 €", "1,00 €", "2,00 €"].iter().enumerate() {
+                            ui.label(format!("Anzeige {v}"));
+                            changed |= pin_combo(ui, ("gkr", i), &mut p.kredit[i]);
+                            ui.end_row();
+                        }
+                    });
                 });
-                egui::Grid::new("gr_out").show(&mut cols[1], |ui| {
-                    ui.label(RichText::new("Ausgänge des PIC").strong());
-                    ui.end_row();
-                    for i in 0..4 {
-                        ui.label(format!("Motor {}", PRODUCTS[i].0));
-                        changed |= pin_combo(ui, ("gmo", i), &mut p.motor[i]);
-                        ui.end_row();
-                    }
-                    ui.label("Klappe zur Kasse");
-                    changed |= pin_combo(ui, "gk1", &mut p.kasse[0]);
-                    ui.end_row();
-                    ui.label("Klappe zur Rückgabe");
-                    changed |= pin_combo(ui, "gk2", &mut p.kasse[1]);
-                    ui.end_row();
-                    for (i, v) in ["0,50 €", "1,00 €", "2,00 €"].iter().enumerate() {
-                        ui.label(format!("Anzeige {v}"));
-                        changed |= pin_combo(ui, ("gkr", i), &mut p.kredit[i]);
-                        ui.end_row();
-                    }
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.label("Bezahlung");
+                    changed |= ui
+                        .radio_value(&mut self.select_first, false, "Geld einwerfen, dann wählen")
+                        .changed();
+                    changed |= ui
+                        .radio_value(&mut self.select_first, true, "Erst wählen, dann bezahlen")
+                        .changed();
                 });
             });
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.label("Bezahlung");
-                changed |= ui.radio_value(&mut self.select_first, false, "Geld einwerfen, dann wählen").changed();
-                changed |= ui.radio_value(&mut self.select_first, true, "Erst wählen, dann bezahlen").changed();
-            });
-        });
         changed
     }
 }
@@ -484,13 +634,20 @@ mod tests {
         b.cpu.latch[0] = 0b011;
         g.tick(&mut b, 0.01);
         assert_eq!(sum(&g.kasse), 200);
-        assert!(!b.cpu.pin(1, 0), "Wahltaste wird beim Motorstart zurückgesetzt");
+        assert!(
+            !b.cpu.pin(1, 0),
+            "Wahltaste wird beim Motorstart zurückgesetzt"
+        );
         for _ in 0..100 {
             g.tick(&mut b, 0.01);
         }
         assert_eq!(g.bottle_out, Some(0));
         assert_eq!(g.stock[0], FULL - 1);
-        assert_eq!(b.cpu.latch[0] & 1, 0, "Motor-Pin wird nach der Ausgabe zurückgesetzt");
+        assert_eq!(
+            b.cpu.latch[0] & 1,
+            0,
+            "Motor-Pin wird nach der Ausgabe zurückgesetzt"
+        );
         // Ausgabefach belegt: keine Münzen mehr
         assert!(!g.insert_coin(0));
         g.click(Click::Klappe, false);

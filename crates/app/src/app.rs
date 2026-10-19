@@ -2,6 +2,8 @@
 
 use crate::apps::Apps;
 use crate::editor::{Editor, EditorAction};
+use crate::layout::Layout;
+use crate::reference::{Reference, Tab};
 use crate::settings::Dialogs;
 use crate::update::{UpdateState, Updater};
 use eframe::egui;
@@ -53,6 +55,8 @@ pub struct PicSimApp {
     pub dialogs: Dialogs,
     pub editor: Editor,
     pub apps: Apps,
+    pub layout: Layout,
+    reference: Reference,
     updater: Updater,
     pub auto_update: bool,
     zoom: f32,
@@ -72,7 +76,10 @@ impl PicSimApp {
             None if ini.flag("SETTINGS", "ECHTZEIT") => Speed::Echtzeit,
             None => Speed::Maximal,
         };
-        let slow_ips = ini.number("SETTINGS", "LANGSAM").unwrap_or(10.0).clamp(0.5, 1000.0);
+        let slow_ips = ini
+            .number("SETTINGS", "LANGSAM")
+            .unwrap_or(10.0)
+            .clamp(0.5, 1000.0);
         let mut app = PicSimApp {
             board: Board::new(ini),
             lst_path: None,
@@ -91,17 +98,30 @@ impl PicSimApp {
             dialogs: Dialogs::default(),
             editor: Editor::default(),
             apps: Apps::default(),
+            layout: Layout::default(),
+            reference: Reference::default(),
             updater: Updater::default(),
             auto_update,
             zoom,
         };
         cc.egui_ctx.set_zoom_factor(zoom);
         app.apps.load(&app.board.ini);
+        app.layout = Layout::load(&app.board.ini);
+        app.reference.open = app.board.ini.flag("Applikationen", "Nachschlagen");
+        if app.board.ini.get("Applikationen", "NachschlagenReiter") == Some("Register") {
+            app.reference.tab = Tab::Register;
+        }
 
         // Datei aus der Kommandozeile, sonst die zuletzt geöffnete
         let start_file = arg
             .map(|a| picsim_core::lst::with_default_extension(&a))
-            .or_else(|| app.board.ini.get("FILES", "NAME").map(PathBuf::from).filter(|p| p.exists()));
+            .or_else(|| {
+                app.board
+                    .ini
+                    .get("FILES", "NAME")
+                    .map(PathBuf::from)
+                    .filter(|p| p.exists())
+            });
         if let Some(p) = start_file {
             app.open_any(&p);
         }
@@ -121,6 +141,10 @@ impl PicSimApp {
     pub fn save_ini(&mut self) {
         self.board.store_ini();
         self.apps.store(&mut self.board.ini);
+        self.layout.store(&mut self.board.ini);
+        self.board.ini.set_flag("Applikationen", "Nachschlagen", self.reference.open);
+        let tab = if self.reference.tab == Tab::Register { "Register" } else { "Befehle" };
+        self.board.ini.set("Applikationen", "NachschlagenReiter", tab);
         let ini = &mut self.board.ini;
         ini.set_flag("UPDATE", "AUTO", self.auto_update);
         ini.set("DISPLAY", "ZOOM", format!("{:.2}", self.zoom));
@@ -139,7 +163,10 @@ impl PicSimApp {
 
     /// Öffnet LST (Simulation) oder SRC (Editor, wird gleich übersetzt).
     pub fn open_any(&mut self, path: &Path) {
-        let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        let ext = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
         if ext == "src" || ext == "asm" {
             self.editor.load(path);
             self.editor.open = true;
@@ -224,7 +251,11 @@ impl PicSimApp {
         self.before_step();
         self.board.go();
         self.realtime_anchor = None;
-        self.status = if self.board.running() { "Läuft".into() } else { "Angehalten".into() };
+        self.status = if self.board.running() {
+            "Läuft".into()
+        } else {
+            "Angehalten".into()
+        };
         self.scroll_to_pc = !self.board.running();
     }
 
@@ -244,7 +275,11 @@ impl PicSimApp {
     /// Lässt die Simulation für einen Bildschirmframe laufen.
     fn run_frame(&mut self, ctx: &egui::Context) {
         let now = Instant::now();
-        let dt = self.last_frame.map(|t| now.duration_since(t).as_secs_f64()).unwrap_or(0.0).min(0.1);
+        let dt = self
+            .last_frame
+            .map(|t| now.duration_since(t).as_secs_f64())
+            .unwrap_or(0.0)
+            .min(0.1);
         self.last_frame = Some(now);
         if !self.board.running() {
             self.slow_credit = 0.0;
@@ -291,7 +326,11 @@ impl PicSimApp {
 
     fn speed_choice(&mut self, ui: &mut egui::Ui) {
         for s in [Speed::Maximal, Speed::Echtzeit, Speed::Langsam] {
-            if ui.radio(self.speed == s, s.name()).on_hover_text(s.hint()).clicked() {
+            if ui
+                .radio(self.speed == s, s.name())
+                .on_hover_text(s.hint())
+                .clicked()
+            {
                 self.speed = s;
                 self.realtime_anchor = None;
                 self.save_ini();
@@ -340,34 +379,54 @@ impl PicSimApp {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("Datei", |ui| {
                 if ui.button("LST-Datei öffnen…").clicked() {
-                    if let Some(p) = rfd::FileDialog::new().add_filter("Listing", &["lst", "LST"]).pick_file() {
+                    if let Some(p) = rfd::FileDialog::new()
+                        .add_filter("Listing", &["lst", "LST"])
+                        .pick_file()
+                    {
                         self.open_any(&p);
                     }
                 }
                 if ui.button("Quelltext öffnen…").clicked() {
-                    if let Some(p) = rfd::FileDialog::new().add_filter("Quelltext", &["src", "SRC", "asm"]).pick_file() {
+                    if let Some(p) = rfd::FileDialog::new()
+                        .add_filter("Quelltext", &["src", "SRC", "asm"])
+                        .pick_file()
+                    {
                         self.open_any(&p);
                     }
                 }
-                if ui.add_enabled(self.lst_path.is_some(), egui::Button::new("Neu laden")).clicked() {
+                if ui
+                    .add_enabled(self.lst_path.is_some(), egui::Button::new("Neu laden"))
+                    .clicked()
+                {
                     self.reload_lst();
                 }
                 ui.separator();
-                if ui.button("Einstellungen importieren…").on_hover_text("picsimu.ini des alten Programms übernehmen").clicked() {
-                    if let Some(p) = rfd::FileDialog::new().add_filter("INI", &["ini", "INI"]).pick_file() {
+                if ui
+                    .button("Einstellungen importieren…")
+                    .on_hover_text("picsimu.ini des alten Programms übernehmen")
+                    .clicked()
+                {
+                    if let Some(p) = rfd::FileDialog::new()
+                        .add_filter("INI", &["ini", "INI"])
+                        .pick_file()
+                    {
                         match Ini::load(&p) {
                             Ok(ini) => {
                                 self.apps.load(&ini);
                                 self.board.apply_ini(ini);
                                 self.save_ini();
-                                self.status = format!("Einstellungen aus {} übernommen", p.display());
+                                self.status =
+                                    format!("Einstellungen aus {} übernommen", p.display());
                             }
                             Err(e) => self.alert = Some(format!("{}: {e}", p.display())),
                         }
                     }
                 }
                 if ui.button("Einstellungen exportieren…").clicked() {
-                    if let Some(p) = rfd::FileDialog::new().set_file_name("picsimu.ini").save_file() {
+                    if let Some(p) = rfd::FileDialog::new()
+                        .set_file_name("picsimu.ini")
+                        .save_file()
+                    {
                         self.board.store_ini();
                         if let Err(e) = self.board.ini.save(&p) {
                             self.alert = Some(e.to_string());
@@ -380,8 +439,17 @@ impl PicSimApp {
                 }
             });
             ui.menu_button("Ansicht", |ui| {
-                ui.label("Bildschirm");
-                for (name, z) in [("Klein (80 %)", 0.8), ("Normal (100 %)", 1.0), ("Groß (125 %)", 1.25), ("Sehr groß (150 %)", 1.5)] {
+                if self.layout.menu(ui) {
+                    self.save_ini();
+                }
+                ui.separator();
+                ui.label("Schriftgröße (auch Strg + und Strg -)");
+                for (name, z) in [
+                    ("Klein (80 %)", 0.8),
+                    ("Normal (100 %)", 1.0),
+                    ("Groß (125 %)", 1.25),
+                    ("Sehr groß (150 %)", 1.5),
+                ] {
                     if ui.radio(self.zoom == z, name).clicked() {
                         self.zoom = z;
                         ui.ctx().set_zoom_factor(z);
@@ -401,10 +469,21 @@ impl PicSimApp {
                 if ui.button("Kurzanleitung").clicked() {
                     self.dialogs.help = true;
                 }
+                if ui.button("Befehlsübersicht").clicked() {
+                    self.reference.open = true;
+                    self.reference.tab = Tab::Befehle;
+                }
+                if ui.button("Registerübersicht (Tabelle 4-1)").clicked() {
+                    self.reference.open = true;
+                    self.reference.tab = Tab::Register;
+                }
                 if ui.button("Nach Updates suchen").clicked() {
                     self.updater.check(ui.ctx(), true);
                 }
-                if ui.checkbox(&mut self.auto_update, "Beim Start nach Updates suchen").changed() {
+                if ui
+                    .checkbox(&mut self.auto_update, "Beim Start nach Updates suchen")
+                    .changed()
+                {
                     self.save_ini();
                 }
             });
@@ -418,7 +497,9 @@ impl PicSimApp {
         self.updater.poll();
         let state = self.updater.state.clone();
         let show = match &state {
-            UpdateState::Available(_) | UpdateState::Installing(_) | UpdateState::Installed(_) => true,
+            UpdateState::Available(_) | UpdateState::Installing(_) | UpdateState::Installed(_) => {
+                true
+            }
             UpdateState::UpToDate | UpdateState::Failed(_) => self.updater.manual,
             _ => false,
         };
@@ -428,11 +509,15 @@ impl PicSimApp {
         egui::Panel::top("update").show(ui, |ui| {
             ui.horizontal(|ui| match state {
                 UpdateState::Available(rel) => {
-                    ui.label(egui::RichText::new(format!("Version {} ist verfügbar", rel.version)).strong());
+                    ui.label(
+                        egui::RichText::new(format!("Version {} ist verfügbar", rel.version))
+                            .strong(),
+                    );
                     if ui.button("Jetzt aktualisieren").clicked() {
                         self.updater.install(rel.clone(), ui.ctx());
                     }
-                    ui.hyperlink_to("Was ist neu?", &rel.page).on_hover_text(&rel.notes);
+                    ui.hyperlink_to("Was ist neu?", &rel.page)
+                        .on_hover_text(&rel.notes);
                     if ui.button("Später").clicked() {
                         self.updater.state = UpdateState::Idle;
                     }
@@ -479,7 +564,11 @@ impl PicSimApp {
         ui.group(|ui| {
             ui.set_width(ui.available_width());
             ui.label(egui::RichText::new("Laufzeit").strong());
-            ui.label(egui::RichText::new(fmt_runtime(self.board.cpu.runtime_us())).monospace().size(16.0));
+            ui.label(
+                egui::RichText::new(fmt_runtime(self.board.cpu.runtime_us()))
+                    .monospace()
+                    .size(16.0),
+            );
             ui.label(format!("{} Zyklen", self.board.cpu.cycles));
             if ui.button("zurücksetzen").clicked() {
                 self.board.cpu.cycles = 0;
@@ -489,7 +578,9 @@ impl PicSimApp {
             ui.set_width(ui.available_width());
             ui.label(egui::RichText::new("Steuerpult").strong());
             let w = ui.available_width();
-            let btn = |ui: &mut egui::Ui, text: &str| ui.add_sized([w, 26.0], egui::Button::new(text)).clicked();
+            let btn = |ui: &mut egui::Ui, text: &str| {
+                ui.add_sized([w, 26.0], egui::Button::new(text)).clicked()
+            };
             if btn(ui, "Reset (F2)") {
                 self.reset();
             }
@@ -505,8 +596,13 @@ impl PicSimApp {
             if btn(ui, "Step over (F9)") {
                 self.step_over();
             }
-            let go = if self.board.running() { "Stop (F10)" } else { "Go (F10)" };
-            let go_btn = egui::Button::new(egui::RichText::new(go).strong()).selected(self.board.running());
+            let go = if self.board.running() {
+                "Stop (F10)"
+            } else {
+                "Go (F10)"
+            };
+            let go_btn =
+                egui::Button::new(egui::RichText::new(go).strong()).selected(self.board.running());
             if ui.add_sized([w, 32.0], go_btn).clicked() {
                 self.go();
             }
@@ -516,9 +612,34 @@ impl PicSimApp {
         });
     }
 
+    fn window_content(&mut self, i: usize, ui: &mut egui::Ui) {
+        match crate::layout::WINDOWS[i].0 {
+            "ram" => crate::view::ram(self, ui),
+            "sfr" => crate::view::sfr(self, ui),
+            "ports" => crate::periph::ports(self, ui),
+            "lcd" => crate::periph::lcd(self, ui),
+            "sseg" => crate::periph::seven_seg(self, ui),
+            "switches" => crate::periph::switches(self, ui),
+            "keys" => crate::periph::keys(self, ui),
+            "leds" => crate::periph::leds(self, ui),
+            "stepper" => crate::periph::stepper(self, ui),
+            "fgen" => crate::periph::funcgen(self, ui),
+            "listing" => crate::view::listing(self, ui),
+            _ => {
+                egui::ScrollArea::vertical()
+                    .id_salt("control")
+                    .show(ui, |ui| self.control_panel(ui));
+            }
+        }
+    }
+
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            let file = self.lst_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "keine Datei geladen".into());
+            let file = self
+                .lst_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "keine Datei geladen".into());
             ui.label(egui::RichText::new(format!("Datei: {file}")).small());
             ui.separator();
             ui.label(egui::RichText::new(&self.status).small());
@@ -526,8 +647,10 @@ impl PicSimApp {
     }
 
     fn alert_window(&mut self, ctx: &egui::Context) {
-        let Some(msg) = self.alert.clone() else { return };
-        egui::Window::new("Hinweis")
+        let Some(msg) = self.alert.clone() else {
+            return;
+        };
+        egui::Window::new("Hinweis").order(egui::Order::Foreground)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -552,24 +675,43 @@ impl eframe::App for PicSimApp {
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         self.update_banner(ui);
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
-        egui::Panel::left("memory")
-            .resizable(true)
-            .default_size(300.0)
-            .show(ui, |ui| crate::view::memory_panel(self, ui));
-        egui::Panel::right("control")
-            .resizable(false)
-            .exact_size(170.0)
-            .show(ui, |ui| self.control_panel(ui));
-        egui::Panel::bottom("listing")
-            .resizable(true)
-            .default_size(340.0)
-            .show(ui, |ui| crate::view::listing(self, ui));
-        egui::CentralPanel::default_margins().show(ui, |ui| crate::periph::peripherals(self, ui));
+        // Fläche für die Fenster: alles zwischen Menü und Statuszeile
+        let area = egui::CentralPanel::default_margins()
+            .show(ui, |ui| ui.max_rect())
+            .inner;
+        // Größe geändert: Fenster erst anteilig neu aufbauen, wenn sie kurz stillsteht
+        if self.layout.update(area) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        let layout_area = self.layout.area(area);
+        for i in 0..crate::layout::N {
+            if !self.layout.visible[i] {
+                continue;
+            }
+            let mut open = true;
+            let mut inner = None;
+            let shown = self.layout.window(i, layout_area).open(&mut open).show(&ctx, |ui| {
+                inner = Some(ui.max_rect());
+                self.window_content(i, ui);
+            });
+            if let Some(r) = shown {
+                let by_user = ctx.input(|i| i.pointer.any_down() || i.pointer.any_released());
+                self.layout.record(i, r.response.rect, inner, by_user);
+            }
+            if !open {
+                self.layout.visible[i] = false;
+                self.save_ini();
+            }
+        }
 
         if let Some(action) = self.editor.show(&ctx) {
             match action {
                 EditorAction::Loaded(lst) => self.open_lst(&lst),
                 EditorAction::Saved => self.save_ini(),
+                EditorAction::ShowReference => {
+                    self.reference.open = true;
+                    self.reference.tab = Tab::Befehle;
+                }
             }
         }
         if self.dialogs.show(&ctx, &mut self.board) {
@@ -578,8 +720,16 @@ impl eframe::App for PicSimApp {
         if self.apps.show(&ctx, &mut self.board) {
             self.save_ini();
         }
+        if let Some((text, instruction)) = self.reference.show(&ctx, &self.board.cpu) {
+            self.editor.insert(&ctx, &text, instruction);
+        }
         self.dialogs.show_info(&ctx);
         self.alert_window(&ctx);
+    }
+
+    /// Fensterlagen kommen aus der INI (als Anteile), nicht aus egui.
+    fn persist_egui_memory(&self) -> bool {
+        false
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -627,5 +777,7 @@ fn fmt_runtime(us: f64) -> String {
 }
 
 fn config_dir() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("picsim")
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("picsim")
 }
