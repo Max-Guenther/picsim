@@ -35,6 +35,9 @@ const GAP: f32 = 4.0;
 const DEFAULT_DECO: Vec2 = Vec2::new(14.0, 40.0);
 
 pub struct Layout {
+    /// Fenster frei verschiebbar (true) oder fest angeordnet (false).
+    /// None: noch nicht gewählt, beim Start wird gefragt.
+    pub free: Option<bool>,
     /// Wird erhöht, wenn die Fenster neu aufgebaut werden sollen.
     generation: u32,
     pub visible: [bool; N],
@@ -59,6 +62,7 @@ impl Default for Layout {
             .map(|d| d.subsec_nanos())
             .unwrap_or(0);
         Layout {
+            free: None,
             generation: session,
             visible: [true; N],
             frac: WINDOWS.map(|w| w.2),
@@ -80,6 +84,7 @@ fn parse_frac(s: &str) -> Option<[f32; 4]> {
 impl Layout {
     pub fn load(ini: &Ini) -> Self {
         let mut l = Layout::default();
+        l.free = ini.get(SEC, "FREI").map(|v| v != "0");
         for (i, (key, _, _)) in WINDOWS.iter().enumerate() {
             l.visible[i] = ini.get(SEC, key).map(|v| v != "0").unwrap_or(true);
             if let Some(f) = ini.get(SEC, &format!("{key}_lage")).and_then(parse_frac) {
@@ -90,11 +95,27 @@ impl Layout {
     }
 
     pub fn store(&self, ini: &mut Ini) {
+        if let Some(free) = self.free {
+            ini.set_flag(SEC, "FREI", free);
+        }
         for (i, (key, _, _)) in WINDOWS.iter().enumerate() {
             ini.set_flag(SEC, key, self.visible[i]);
             let [x, y, w, h] = self.frac[i];
             ini.set(SEC, &format!("{key}_lage"), format!("{x:.4};{y:.4};{w:.4};{h:.4}"));
         }
+    }
+
+    pub fn is_free(&self) -> bool {
+        self.free != Some(false)
+    }
+
+    /// Modus wechseln. Beim Wechsel zu freien Fenstern starten diese an
+    /// ihrer gespeicherten Lage.
+    pub fn set_free(&mut self, free: bool) {
+        if !self.is_free() && free {
+            self.rebuild();
+        }
+        self.free = Some(free);
     }
 
     /// Einträge für das Menü "Ansicht". Liefert true bei Änderung.
@@ -109,7 +130,7 @@ impl Layout {
             self.visible = [true; N];
             changed = true;
         }
-        if ui.button("Layout zurücksetzen").on_hover_text("Alle Fenster wieder an ihren Standardplatz").clicked() {
+        if self.is_free() && ui.button("Layout zurücksetzen").on_hover_text("Alle Fenster wieder an ihren Standardplatz").clicked() {
             self.visible = [true; N];
             self.frac = WINDOWS.map(|w| w.2);
             self.rebuild();
@@ -175,6 +196,16 @@ impl Layout {
             .resizable(true)
             .collapsible(true)
             .min_size([60.0, 40.0])
+    }
+
+    /// Feste Kachel für Bereich i im festen Modus (Standardlage).
+    pub fn tile(i: usize, area: Rect) -> Rect {
+        let [x, y, w, h] = WINDOWS[i].2;
+        Rect::from_min_size(
+            area.min + vec2(x * area.width(), y * area.height()),
+            vec2(w * area.width(), h * area.height()),
+        )
+        .shrink(GAP / 2.0)
     }
 
     /// Nach dem Zeichnen: aktuelle Lage eines Fensters merken.
@@ -251,6 +282,18 @@ mod tests {
         assert_eq!(l.generation, gen + 1);
         assert_eq!(l.area, Some(a2));
         assert_eq!(l.frac[0], f, "Anteile bleiben beim Verkleinern gleich");
+    }
+
+    #[test]
+    fn mode_survives_ini() {
+        let mut ini = Ini::default();
+        assert_eq!(Layout::load(&ini).free, None, "ohne Eintrag wird gefragt");
+        let mut l = Layout::default();
+        l.set_free(false);
+        l.store(&mut ini);
+        let l2 = Layout::load(&ini);
+        assert_eq!(l2.free, Some(false));
+        assert!(!l2.is_free());
     }
 
     #[test]

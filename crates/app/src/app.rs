@@ -460,7 +460,22 @@ impl PicSimApp {
                 ui.label("Tempo bei Go");
                 self.speed_choice(ui);
             });
-            ui.menu_button("Einstellungen", |ui| self.dialogs.menu(ui));
+            ui.menu_button("Einstellungen", |ui| {
+                self.dialogs.menu(ui);
+                ui.separator();
+                let mut free = self.layout.is_free();
+                if ui
+                    .checkbox(&mut free, "Fenster frei verschieben")
+                    .on_hover_text(
+                        "An: Jeder Bereich lässt sich verschieben und in der Größe ändern.\n\
+                         Aus: Alle Bereiche liegen fest angeordnet im Programmfenster.",
+                    )
+                    .changed()
+                {
+                    self.layout.set_free(free);
+                    self.save_ini();
+                }
+            });
             if ui.button("Quelltext bearbeiten").clicked() {
                 self.editor.open = true;
             }
@@ -612,6 +627,95 @@ impl PicSimApp {
         });
     }
 
+    /// Freier Modus: jeder Bereich ist ein eigenes, verschiebbares Fenster.
+    fn free_windows(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        // Fläche für die Fenster: alles zwischen Menü und Statuszeile
+        let area = egui::CentralPanel::default_margins()
+            .show(ui, |ui| ui.max_rect())
+            .inner;
+        // Größe geändert: Fenster erst anteilig neu aufbauen, wenn sie kurz stillsteht
+        if self.layout.update(area) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
+        let layout_area = self.layout.area(area);
+        for i in 0..crate::layout::N {
+            if !self.layout.visible[i] {
+                continue;
+            }
+            let mut open = true;
+            let mut inner = None;
+            let shown = self.layout.window(i, layout_area).open(&mut open).show(ctx, |ui| {
+                inner = Some(ui.max_rect());
+                self.window_content(i, ui);
+            });
+            if let Some(r) = shown {
+                let by_user = ctx.input(|i| i.pointer.any_down() || i.pointer.any_released());
+                self.layout.record(i, r.response.rect, inner, by_user);
+            }
+            if !open {
+                self.layout.visible[i] = false;
+                self.save_ini();
+            }
+        }
+    }
+
+    /// Fester Modus: alle Bereiche als Kacheln an ihrem Standardplatz.
+    fn fixed_tiles(&mut self, ui: &mut egui::Ui) {
+        let area = ui.max_rect();
+        for i in 0..crate::layout::N {
+            if !self.layout.visible[i] {
+                continue;
+            }
+            let rect = Layout::tile(i, area);
+            let mut tile = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt(("kachel", i)));
+            tile.set_clip_rect(rect.intersect(ui.clip_rect()));
+            egui::Frame::group(tile.style()).show(&mut tile, |ui| {
+                ui.set_min_size(ui.available_size());
+                ui.label(egui::RichText::new(crate::layout::WINDOWS[i].1).strong());
+                self.window_content(i, ui);
+            });
+        }
+    }
+
+    /// Beim ersten Start fragen, wie die Bereiche angeordnet sein sollen.
+    fn mode_dialog(&mut self, ctx: &egui::Context) {
+        if self.layout.free.is_some() {
+            return;
+        }
+        let mut choice = None;
+        egui::Window::new("Fensteranordnung")
+            .order(egui::Order::Foreground)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.set_max_width(420.0);
+                ui.label("Wie sollen die Bereiche angeordnet sein?");
+                ui.add_space(8.0);
+                if ui.add(egui::Button::new(egui::RichText::new("Fest angeordnet").strong()).min_size(egui::vec2(180.0, 28.0))).clicked() {
+                    choice = Some(false);
+                }
+                ui.label("Alle Bereiche liegen an festen Plätzen und wachsen mit dem Programmfenster mit.");
+                ui.add_space(8.0);
+                if ui.add(egui::Button::new(egui::RichText::new("Frei verschiebbar").strong()).min_size(egui::vec2(180.0, 28.0))).clicked() {
+                    choice = Some(true);
+                }
+                ui.label("Jeder Bereich ist ein eigenes Fenster, das du verschieben und größer oder kleiner ziehen kannst.");
+                ui.add_space(8.0);
+                ui.separator();
+                ui.label(
+                    egui::RichText::new(
+                        "Du kannst das jederzeit unter Einstellungen > Fenster frei verschieben ändern.",
+                    )
+                    .weak(),
+                );
+            });
+        if let Some(free) = choice {
+            self.layout.set_free(free);
+            self.save_ini();
+        }
+    }
+
     fn window_content(&mut self, i: usize, ui: &mut egui::Ui) {
         match crate::layout::WINDOWS[i].0 {
             "ram" => crate::view::ram(self, ui),
@@ -675,34 +779,12 @@ impl eframe::App for PicSimApp {
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
         self.update_banner(ui);
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
-        // Fläche für die Fenster: alles zwischen Menü und Statuszeile
-        let area = egui::CentralPanel::default_margins()
-            .show(ui, |ui| ui.max_rect())
-            .inner;
-        // Größe geändert: Fenster erst anteilig neu aufbauen, wenn sie kurz stillsteht
-        if self.layout.update(area) {
-            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        if self.layout.is_free() {
+            self.free_windows(ui, &ctx);
+        } else {
+            egui::CentralPanel::default_margins().show(ui, |ui| self.fixed_tiles(ui));
         }
-        let layout_area = self.layout.area(area);
-        for i in 0..crate::layout::N {
-            if !self.layout.visible[i] {
-                continue;
-            }
-            let mut open = true;
-            let mut inner = None;
-            let shown = self.layout.window(i, layout_area).open(&mut open).show(&ctx, |ui| {
-                inner = Some(ui.max_rect());
-                self.window_content(i, ui);
-            });
-            if let Some(r) = shown {
-                let by_user = ctx.input(|i| i.pointer.any_down() || i.pointer.any_released());
-                self.layout.record(i, r.response.rect, inner, by_user);
-            }
-            if !open {
-                self.layout.visible[i] = false;
-                self.save_ini();
-            }
-        }
+        self.mode_dialog(&ctx);
 
         if let Some(action) = self.editor.show(&ctx) {
             match action {

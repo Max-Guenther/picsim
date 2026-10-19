@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.4.0
+
+- Fenstermodus wählbar unter Einstellungen > Fenster frei verschieben. An: Jeder Bereich ist ein eigenes Fenster wie in 0.3.0. Aus: Alle Bereiche liegen fest angeordnet im Programmfenster und wachsen mit, nichts schiebt sich übereinander
+- Beim ersten Start fragt PicSim, welche Anordnung du möchtest, und zeigt, wo du das später wieder änderst
+
 ## 0.3.0
 
 Alles lässt sich selbst anordnen und in der Größe ändern:
