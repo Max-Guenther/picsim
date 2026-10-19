@@ -53,6 +53,7 @@ Breakpoints setzt ein Klick in die erste Spalte des Listings. RAM-Werte, Bits in
 - 8 Siebensegmentanzeigen mit Multiplex, gemeinsamer Anode/Kathode und Latch
 - LCD (HD44780 im 4-Bit-Modus, 1x8 bis 4x20)
 - Funktionsgenerator (Rechteck), Schrittmotor
+- Applikationen: Ampeln an einer Kreuzung, Getränkeautomat
 
 Alle Bauteile lassen sich unter **Einstellungen** frei auf Pins legen. Die Einstellungen stehen in `picsimu.ini` (Linux: `~/.config/picsim/`, macOS: `~/Library/Application Support/picsim/`). Die INI des alten Programms lässt sich über **Datei → Einstellungen importieren** übernehmen.
 

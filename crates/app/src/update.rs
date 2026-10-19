@@ -58,6 +58,12 @@ fn agent() -> ureq::Agent {
 
 /// Liefert das neueste Release, wenn es neuer als die laufende Version ist.
 pub fn check() -> Result<Option<Release>, String> {
+    let current = Version::parse(CURRENT).expect("eigene Version ist gültig");
+    Ok(latest()?.filter(|r| r.version > current))
+}
+
+/// Das neueste veröffentlichte Release mit Paket für dieses System.
+fn latest() -> Result<Option<Release>, String> {
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
     let gh: GhRelease = agent()
         .get(&url)
@@ -72,10 +78,6 @@ pub fn check() -> Result<Option<Release>, String> {
     }
     let version = Version::parse(gh.tag_name.trim_start_matches('v'))
         .map_err(|e| format!("Unbekanntes Versionsformat {}: {e}", gh.tag_name))?;
-    let current = Version::parse(CURRENT).expect("eigene Version ist gültig");
-    if version <= current {
-        return Ok(None);
-    }
     let name = asset_name().ok_or("Für dieses System gibt es kein fertiges Paket")?;
     let asset = gh
         .assets
@@ -112,8 +114,8 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Lädt das Release und ersetzt die laufende Programmdatei.
-pub fn install(rel: &Release) -> Result<(), String> {
+/// Lädt das Paket, prüft die Prüfsumme und holt die Programmdatei heraus.
+fn fetch_binary(rel: &Release) -> Result<Vec<u8>, String> {
     let data = download(&rel.asset_url)?;
     let sha_url = rel.sha_url.as_ref().ok_or("Im Release fehlt die Prüfsumme, Update abgebrochen")?;
     let expected = String::from_utf8_lossy(&download(sha_url)?)
@@ -138,8 +140,12 @@ pub fn install(rel: &Release) -> Result<(), String> {
             break;
         }
     }
-    let binary = binary.ok_or("Im Paket fehlt die Programmdatei")?;
+    binary.ok_or_else(|| "Im Paket fehlt die Programmdatei".to_string())
+}
 
+/// Lädt das Release und ersetzt die laufende Programmdatei.
+pub fn install(rel: &Release) -> Result<(), String> {
+    let binary = fetch_binary(rel)?;
     let tmp: PathBuf = std::env::temp_dir().join(format!("picsim-update-{}", rel.version));
     std::fs::write(&tmp, &binary).map_err(|e| format!("Kann nicht schreiben: {e}"))?;
     #[cfg(unix)]
@@ -252,6 +258,19 @@ mod tests {
         if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
             assert_eq!(asset_name(), Some("picsim-linux-x86_64.tar.gz"));
         }
+    }
+
+    /// Lädt das echte, neueste Release von GitHub. Braucht Netz, daher nur
+    /// auf Wunsch: cargo test -p picsim -- --ignored
+    #[test]
+    #[ignore]
+    fn download_latest_release() {
+        let rel = latest().unwrap().expect("es gibt ein Release");
+        let bin = fetch_binary(&rel).unwrap();
+        if cfg!(target_os = "linux") {
+            assert_eq!(&bin[..4], b"\x7fELF");
+        }
+        assert!(bin.len() > 1_000_000);
     }
 
     #[test]

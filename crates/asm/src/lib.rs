@@ -919,7 +919,7 @@ mod tests {
 
     #[test]
     fn examples_assemble() {
-        for src in [include_str!("../../../examples/lcd_hallo.src")] {
+        for src in [include_str!("../../../examples/lcd_hallo.src"), include_str!("../../../examples/ampel.src")] {
             let o = asm(src);
             assert!(o.ok(), "{:?}", o.errors);
         }

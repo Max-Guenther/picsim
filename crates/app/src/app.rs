@@ -82,6 +82,7 @@ impl PicSimApp {
             zoom,
         };
         cc.egui_ctx.set_zoom_factor(zoom);
+        app.apps.load(&app.board.ini);
 
         // Datei aus der Kommandozeile, sonst die zuletzt geöffnete
         let start_file = arg
@@ -105,6 +106,7 @@ impl PicSimApp {
 
     pub fn save_ini(&mut self) {
         self.board.store_ini();
+        self.apps.store(&mut self.board.ini);
         let ini = &mut self.board.ini;
         ini.set_flag("UPDATE", "AUTO", self.auto_update);
         ini.set("DISPLAY", "ZOOM", format!("{:.2}", self.zoom));
@@ -300,6 +302,7 @@ impl PicSimApp {
                     if let Some(p) = rfd::FileDialog::new().add_filter("INI", &["ini", "INI"]).pick_file() {
                         match Ini::load(&p) {
                             Ok(ini) => {
+                                self.apps.load(&ini);
                                 self.board.apply_ini(ini);
                                 self.save_ini();
                                 self.status = format!("Einstellungen aus {} übernommen", p.display());

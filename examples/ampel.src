@@ -1,0 +1,97 @@
+; Ampelsteuerung mit Kontaktschleife (Applikationen -> Ampeln an einer Kreuzung)
+;
+; Ampel 1 und 3 (Hauptstraße):  RB0 rot, RB1 gelb, RB2 grün
+; Ampel 2 und 4 (Nebenstraße):  RB3 rot, RB4 gelb, RB5 grün
+; Kontaktschleifen:             RB6, RB7 (Eingänge)
+;
+; Die Hauptstraße hat grün, bis ein Auto auf einer Kontaktschleife steht.
+; Quarz 4 MHz, also 1 µs je Befehlszyklus.
+
+	device	16f84
+
+z1	equ	20h
+z2	equ	21h
+z3	equ	22h
+z4	equ	23h
+
+	org	0
+start
+	bsf	STATUS,RP0
+	movlw	0C0h		; RB6, RB7 Eingänge, Rest Ausgänge
+	movwf	TRISB
+	bcf	STATUS,RP0
+
+haupt_gruen
+	movlw	00001100b	; Haupt grün, Neben rot
+	movwf	PORTB
+warte_auto
+	btfsc	PORTB,6
+	goto	wechsel
+	btfsc	PORTB,7
+	goto	wechsel
+	goto	warte_auto
+
+wechsel
+	movlw	2
+	call	sekunden
+	movlw	00001010b	; Haupt gelb
+	movwf	PORTB
+	movlw	1
+	call	sekunden
+	movlw	00001001b	; beide rot
+	movwf	PORTB
+	movlw	1
+	call	sekunden
+	movlw	00011001b	; Neben rot-gelb
+	movwf	PORTB
+	movlw	1
+	call	sekunden
+	movlw	00100001b	; Neben grün
+	movwf	PORTB
+	movlw	4
+	call	sekunden
+	movlw	00010001b	; Neben gelb
+	movwf	PORTB
+	movlw	1
+	call	sekunden
+	movlw	00001001b	; beide rot
+	movwf	PORTB
+	movlw	1
+	call	sekunden
+	movlw	00001011b	; Haupt rot-gelb
+	movwf	PORTB
+	movlw	1
+	call	sekunden
+	goto	haupt_gruen
+
+; W Sekunden warten
+sekunden
+	movwf	z3
+s1	movlw	5		; 5 x 200 ms
+	movwf	z2
+s2	call	ms200
+	decfsz	z2,f
+	goto	s2
+	decfsz	z3,f
+	goto	s1
+	return
+
+; etwa 200 ms
+ms200
+	movlw	200
+	movwf	z1
+m1	call	ms1
+	decfsz	z1,f
+	goto	m1
+	return
+
+; etwa 1 ms: 249 x 4 Zyklen
+ms1
+	movlw	249
+	movwf	z4
+m2	nop
+	decfsz	z4,f
+	goto	m2
+	return
+
+	end

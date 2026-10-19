@@ -1,5 +1,16 @@
 # Änderungen
 
+## 0.2.0
+
+Applikationen wie im Original (Menü Applikationen):
+
+- Ampeln an einer Kreuzung: 4 Ampeln an frei wählbaren Pins, 4 Autos einzeln freigeben und mit eigenem Tempo, Kontaktschleifen als Eingänge, Crash-Erkennung (Crash anklicken zum Auflösen)
+- Getränkeautomat: Münzen (0,50 €, 1 €, 2 €) per Drag & Drop, Münzprüfer-Impuls, Zwischenkasse mit Klappen zur Kasse und Rückgabe, 4 Schächte mit Motor, Leersensor und Wahltaste (Wischerfunktion), Geldrückgabe, Klappe, Kreditanzeige, Auffüllen mit Shift+Klick
+- Die Applikationen laufen in Simulationszeit, halten also an, wenn die Simulation steht
+- Offene Applikationsfenster und die Autos der Ampel bleiben beim nächsten Start erhalten
+- Neue Beispiele: examples/ampel.src und examples/lcd_hallo.src
+- Assembler: Text in DT und RETW, z.B. dt "Hallo",0
+
 ## 0.1.0
 
 Erste Version, komplett neu geschrieben nach dem Vorbild von PicSimu 0.51.
