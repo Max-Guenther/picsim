@@ -1,0 +1,112 @@
+; LCD-Beispiel: schreibt "Hallo PicSim" in Zeile 1 und einen Zähler in Zeile 2
+;
+; Anschluss (Einstellungen -> LCD):
+;   RS = RA0, E = RA1, RW = GND, D4..D7 = RB4..RB7, Format 2 x 16
+
+	device	16f84
+
+RS	equ	0		; PORTA,0
+E	equ	1		; PORTA,1
+zeichen	equ	20h
+zaehler	equ	21h
+warte	equ	22h
+idx	equ	23h
+
+	org	0
+	goto	start
+
+;--- Unterprogramme --------------------------------------------------
+
+; Oberes Nibble von W an RB4..RB7 ausgeben und E pulsen
+nibble
+	andlw	0F0h
+	movwf	PORTB
+	bsf	PORTA,E
+	nop
+	bcf	PORTA,E
+	return
+
+; Byte in W als Befehl (RS=0) oder Zeichen (RS=1) senden
+sende
+	movwf	zeichen
+	call	nibble
+	swapf	zeichen,w
+	call	nibble
+	call	pause
+	return
+
+befehl
+	bcf	PORTA,RS
+	goto	sende
+
+daten
+	bsf	PORTA,RS
+	goto	sende
+
+pause
+	movlw	20
+	movwf	warte
+p1	decfsz	warte,f
+	goto	p1
+	return
+
+; Text-Tabelle, Index in W
+text
+	addwf	PCL,f
+	dt	"Hallo PicSim",0
+
+;--- Hauptprogramm ---------------------------------------------------
+
+start
+	bsf	STATUS,RP0
+	clrf	TRISA
+	clrf	TRISB
+	bcf	STATUS,RP0
+	clrf	PORTA
+
+	; Initialisierung im 4-Bit-Modus
+	movlw	30h
+	call	nibble
+	call	pause
+	movlw	30h
+	call	nibble
+	call	pause
+	movlw	30h
+	call	nibble
+	call	pause
+	movlw	20h		; 4-Bit
+	call	nibble
+	call	pause
+	movlw	28h		; 2 Zeilen, 5x8
+	call	befehl
+	movlw	0Ch		; Anzeige an
+	call	befehl
+	movlw	01h		; löschen
+	call	befehl
+	movlw	06h		; Cursor nach rechts
+	call	befehl
+
+	clrf	idx
+naechstes
+	movf	idx,w
+	call	text
+	iorlw	0
+	btfsc	STATUS,Z
+	goto	fertig
+	call	daten
+	incf	idx,f
+	goto	naechstes
+
+fertig
+	clrf	zaehler
+schleife
+	movlw	0C0h		; Zeile 2, Spalte 0
+	call	befehl
+	movf	zaehler,w
+	andlw	0Fh
+	addlw	'0'
+	call	daten
+	incf	zaehler,f
+	goto	schleife
+
+	end

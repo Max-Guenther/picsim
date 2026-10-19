@@ -1,0 +1,30 @@
+status	equ	3
+rp0	equ	5
+porta	equ	5
+portb	equ	6
+trisa	equ	5
+trisb	equ	6
+led	equ	0
+key	equ	0
+
+	device 16f84
+	
+	org	0
+
+cold
+init
+
+	bsf	status, rp0
+	bcf	trisa,led
+	bcf	status, rp0
+loop
+	btfsc	portb,key
+	goto	ledaus
+ledein
+	bsf	porta,led
+	goto	loop
+ledaus
+	bcf	porta,led
+	goto loop
+
+	end

@@ -1,0 +1,30 @@
+                    00001           status equ 3
+                    00002           rp0 equ 5
+                    00003           porta equ 5
+                    00004           portb equ 6
+                    00005           trisa equ 5
+                    00006           trisb equ 6
+                    00007           led equ 0
+                    00008           key equ 0
+                    00009           
+                    00010           device 16f84
+                    00011            
+                    00012           org 0
+                    00013           
+                    00014  cold     
+                    00015  init     
+                    00016           
+0000 1683           00017           bsf status, rp0
+0001 1005           00018           bcf trisa,led
+0002 1283           00019           bcf status, rp0
+                    00020  loop     
+0003 1806           00021           btfsc portb,key
+0004 2807           00022           goto ledaus
+                    00023  ledein   
+0005 1405           00024           bsf porta,led
+0006 2803           00025           goto loop
+                    00026  ledaus   
+0007 1005           00027           bcf porta,led
+0008 2803           00028           goto loop
+                    00029           
+                    00030           end

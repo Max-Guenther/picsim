@@ -1,0 +1,82 @@
+; Testprogramm mit allen Befehlen und Schreibweisen,
+; dient zum Vergleich mit dem Original-Assembler iL_ASS16
+
+	device	16f84
+
+status	equ	3
+c	equ	0
+rp0	equ	5
+pcl	equ	2
+portb	equ	6
+intcon	equ	0bh
+t0if	equ	2
+gie	equ	0bh,7
+t0ie	equ	0bh,5
+trisb	equ	86h
+option_r	equ	81h
+eedata	equ	8
+eecon1	equ	88h
+zahl	equ	20h
+zaehler	equ	21h
+taste1	equ	6,4
+konst	equ	35
+binaer	equ	00101101b
+
+	org	0
+	goto	start
+	org	4
+isr
+	bcf	INTCON,T0IF
+	retfie
+
+start
+	addwf	zahl,f
+	addwf	zahl,w
+	andwf	zahl,1
+	andwf	zahl,0
+	clrf	zahl
+	clrw
+	comf	zahl,f
+	decf	zahl,w
+	decfsz	zaehler,f
+	goto	$-1
+	incf	zahl,f
+	incfsz	zaehler,w
+	iorwf	zahl,f
+	movf	zahl,w
+	movwf	zaehler
+	nop
+	rlf	zahl,f
+	rrf	zahl,w
+	subwf	zahl,f
+	swapf	zahl,w
+	xorwf	zahl,f
+	bcf	STATUS,C
+	bsf	STATUS,RP0
+	btfsc	taste1
+	btfss	PORTB,7
+	bsf	GIE
+	bcf	T0IE
+	addlw	konst
+	andlw	0Fh
+	call	unter
+	clrwdt
+	iorlw	binaer
+	movlw	'A'
+	movlw	0x3F
+	sublw	konst+1
+	xorlw	0FFH
+	movwf	TRISB
+	movwf	OPTION_R
+	movf	EEDATA,w
+	bsf	EECON1,2
+	sleep
+	goto	start
+
+unter
+	movf	PCL,w
+	addwf	PCL,f
+	retlw	1
+	retlw	2
+	return
+	end

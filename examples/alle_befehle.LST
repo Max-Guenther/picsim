@@ -1,0 +1,82 @@
+                    00001           ; Testprogramm mit allen Befehlen und Schreibweisen,
+                    00002           ; dient zum Vergleich mit dem Original-Assembler iL_ASS16
+                    00003           
+                    00004           device 16f84
+                    00005           
+                    00006           status equ 3
+                    00007           c equ 0
+                    00008           rp0 equ 5
+                    00009           pcl equ 2
+                    00010           portb equ 6
+                    00011           intcon equ 0bh
+                    00012           t0if equ 2
+                    00013           gie equ 0bh,7
+                    00014           t0ie equ 0bh,5
+                    00015           trisb equ 86h
+                    00016           option_r equ 81h
+                    00017           eedata equ 8
+                    00018           eecon1 equ 88h
+                    00019           zahl equ 20h
+                    00020           zaehler equ 21h
+                    00021           taste1 equ 6,4
+                    00022           konst equ 35
+                    00023           binaer equ 00101101b
+                    00024           
+                    00025           org 0
+0000 2806           00026           goto start
+                    00027           org 4
+                    00028  isr      
+0004 110B           00029           bcf INTCON,T0IF
+0005 0009           00030           retfie
+                    00031           
+                    00032  start    
+0006 07A0           00033           addwf zahl,f
+0007 0720           00034           addwf zahl,w
+0008 05A0           00035           andwf zahl,1
+0009 0520           00036           andwf zahl,0
+000A 01A0           00037           clrf zahl
+000B 0100           00038           clrw
+000C 09A0           00039           comf zahl,f
+000D 0320           00040           decf zahl,w
+000E 0BA1           00041           decfsz zaehler,f
+000F 280E           00042           goto $-1
+0010 0AA0           00043           incf zahl,f
+0011 0F21           00044           incfsz zaehler,w
+0012 04A0           00045           iorwf zahl,f
+0013 0820           00046           movf zahl,w
+0014 00A1           00047           movwf zaehler
+0015 0000           00048           nop
+0016 0DA0           00049           rlf zahl,f
+0017 0C20           00050           rrf zahl,w
+0018 02A0           00051           subwf zahl,f
+0019 0E20           00052           swapf zahl,w
+001A 06A0           00053           xorwf zahl,f
+001B 1003           00054           bcf STATUS,C
+001C 1683           00055           bsf STATUS,RP0
+001D 1A06           00056           btfsc taste1
+001E 1F86           00057           btfss PORTB,7
+001F 178B           00058           bsf GIE
+0020 128B           00059           bcf T0IE
+0021 3E23           00060           addlw konst
+0022 390F           00061           andlw 0Fh
+0023 2030           00062           call unter
+0024 0064           00063           clrwdt
+0025 382D           00064           iorlw binaer
+0026 3041           00065           movlw 'A'
+0027 303F           00066           movlw 0x3F
+0028 3C24           00067           sublw konst+1
+0029 3AFF           00068           xorlw 0FFH
+002A 0086           00069           movwf TRISB
+002B 0081           00070           movwf OPTION_R
+002C 0808           00071           movf EEDATA,w
+002D 1508           00072           bsf EECON1,2
+002E 0063           00073           sleep
+002F 2806           00074           goto start
+                    00075           
+                    00076  unter    
+0030 0802           00077           movf PCL,w
+0031 0782           00078           addwf PCL,f
+0032 3401           00079           retlw 1
+0033 3402           00080           retlw 2
+0034 0008           00081           return
+                    00082           end

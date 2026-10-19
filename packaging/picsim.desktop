@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=PicSim
+GenericName=PIC-Simulator
+Comment=Simulator für den PIC16F84 mit Assembler und Editor
+Exec=picsim %f
+Icon=picsim
+Terminal=false
+Categories=Development;Education;Electronics;
+StartupWMClass=picsim

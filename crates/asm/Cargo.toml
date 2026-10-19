@@ -1,0 +1,10 @@
+[package]
+name = "picsim-asm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+picsim-core = { path = "../core" }
