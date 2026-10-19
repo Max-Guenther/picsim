@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.2.1
+
+- Fehler behoben: Bei Go blieb die grüne Zeile im Listing scheinbar stehen, weil jedes Bild nach gleich vielen Befehlen endete. Jetzt wandert sie mit dem Programm, und das Listing scrollt mit
+- Neues Tempo für Go: Maximal, Echtzeit oder Langsam mit einstellbaren Befehlen pro Sekunde (Steuerpult und Menü Ansicht)
+
 ## 0.2.0
 
 Applikationen wie im Original (Menü Applikationen):

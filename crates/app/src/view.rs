@@ -178,7 +178,7 @@ pub fn listing(app: &mut PicSimApp, ui: &mut egui::Ui) {
     ui.spacing_mut().item_spacing.y = 0.0;
 
     let mut area = egui::ScrollArea::both().id_salt("listing").auto_shrink([false, false]);
-    if app.scroll_to_pc && !app.board.running() {
+    if app.scroll_to_pc {
         if let Some(line) = current {
             let visible = ui.available_height();
             area = area.vertical_scroll_offset((line as f32 * row_h - visible / 2.0).max(0.0));
@@ -186,7 +186,9 @@ pub fn listing(app: &mut PicSimApp, ui: &mut egui::Ui) {
         app.scroll_to_pc = false;
     }
     let mut toggle = None;
+    let mut visible = 0..0;
     area.show_rows(ui, row_h, n, |ui, range| {
+        visible = range.clone();
         for i in range {
             let line = &app.board.listing.lines[i];
             let width = ui.available_width().max(900.0);
@@ -218,5 +220,12 @@ pub fn listing(app: &mut PicSimApp, ui: &mut egui::Ui) {
     });
     if let Some(addr) = toggle {
         app.board.toggle_breakpoint(addr);
+    }
+    // Während Go mitscrollen, sobald die aktuelle Zeile aus dem Bild läuft
+    if let Some(line) = current {
+        let inner = visible.start + 1..visible.end.saturating_sub(1);
+        if app.board.running() && !inner.contains(&line) {
+            app.scroll_to_pc = true;
+        }
     }
 }

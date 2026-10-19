@@ -38,9 +38,13 @@ pub struct PicSimApp {
     ini_path: PathBuf,
     pub status: String,
     alert: Option<String>,
-    /// Simulation läuft in Echtzeit statt so schnell wie möglich.
-    pub realtime: bool,
+    /// Tempo bei Go, Step over und Step out.
+    pub speed: Speed,
+    /// Befehle je Sekunde im Tempo Langsam.
+    pub slow_ips: f64,
     realtime_anchor: Option<(Instant, f64)>,
+    slow_credit: f64,
+    last_frame: Option<Instant>,
     pub scroll_to_pc: bool,
     /// RAM-Inhalt vor dem letzten Schritt, für die Markierung von Änderungen.
     pub prev_ram: [u8; 256],
@@ -61,15 +65,25 @@ impl PicSimApp {
         let ini = Ini::load(&ini_path).unwrap_or_else(|_| Ini::parse(DEFAULT_INI));
         let auto_update = ini.get("UPDATE", "AUTO").map(|v| v != "0").unwrap_or(true);
         let zoom = ini.number("DISPLAY", "ZOOM").unwrap_or(1.0) as f32;
-        let realtime = ini.flag("SETTINGS", "ECHTZEIT");
+        let speed = match ini.get("SETTINGS", "TEMPO") {
+            Some("Echtzeit") => Speed::Echtzeit,
+            Some("Langsam") => Speed::Langsam,
+            Some(_) => Speed::Maximal,
+            None if ini.flag("SETTINGS", "ECHTZEIT") => Speed::Echtzeit,
+            None => Speed::Maximal,
+        };
+        let slow_ips = ini.number("SETTINGS", "LANGSAM").unwrap_or(10.0).clamp(0.5, 1000.0);
         let mut app = PicSimApp {
             board: Board::new(ini),
             lst_path: None,
             ini_path,
             status: "Bereit".into(),
             alert: None,
-            realtime,
+            speed,
+            slow_ips,
             realtime_anchor: None,
+            slow_credit: 0.0,
+            last_frame: None,
             scroll_to_pc: true,
             prev_ram: [0; 256],
             ram_edit: None,
@@ -110,7 +124,8 @@ impl PicSimApp {
         let ini = &mut self.board.ini;
         ini.set_flag("UPDATE", "AUTO", self.auto_update);
         ini.set("DISPLAY", "ZOOM", format!("{:.2}", self.zoom));
-        ini.set_flag("SETTINGS", "ECHTZEIT", self.realtime);
+        ini.set("SETTINGS", "TEMPO", self.speed.name());
+        ini.set("SETTINGS", "LANGSAM", format!("{}", self.slow_ips));
         if let Some(p) = &self.lst_path {
             ini.set("FILES", "NAME", p.to_string_lossy());
         }
@@ -228,30 +243,70 @@ impl PicSimApp {
 
     /// Lässt die Simulation für einen Bildschirmframe laufen.
     fn run_frame(&mut self, ctx: &egui::Context) {
+        let now = Instant::now();
+        let dt = self.last_frame.map(|t| now.duration_since(t).as_secs_f64()).unwrap_or(0.0).min(0.1);
+        self.last_frame = Some(now);
         if !self.board.running() {
+            self.slow_credit = 0.0;
             return;
         }
-        let start = Instant::now();
-        let budget = Duration::from_millis(14);
-        loop {
-            if self.realtime {
-                let now_us = self.board.cpu.runtime_us();
-                let (t0, sim0) = *self.realtime_anchor.get_or_insert((start, now_us));
-                if now_us >= sim0 + t0.elapsed().as_secs_f64() * 1e6 {
-                    break;
+        match self.speed {
+            Speed::Langsam => {
+                self.slow_credit += dt * self.slow_ips;
+                let steps = self.slow_credit.floor();
+                self.slow_credit -= steps;
+                if steps >= 1.0 {
+                    self.before_step();
+                    let stop = self.board.run(steps as usize);
+                    self.handle_stop(stop);
                 }
             }
-            let stop = self.board.run(2000);
-            if stop != Stop::Budget {
-                self.handle_stop(stop);
-                break;
-            }
-            if start.elapsed() > budget {
-                break;
+            Speed::Maximal | Speed::Echtzeit => {
+                let budget = Duration::from_millis(14);
+                loop {
+                    if self.speed == Speed::Echtzeit {
+                        let now_us = self.board.cpu.runtime_us();
+                        let (t0, sim0) = *self.realtime_anchor.get_or_insert((now, now_us));
+                        if now_us >= sim0 + t0.elapsed().as_secs_f64() * 1e6 {
+                            break;
+                        }
+                    }
+                    // Kleine Blöcke mit ungerader Länge, damit ein Bild nicht immer
+                    // an derselben Stelle einer Programmschleife endet
+                    let stop = self.board.run(97);
+                    if stop != Stop::Budget {
+                        self.handle_stop(stop);
+                        break;
+                    }
+                    if now.elapsed() > budget {
+                        break;
+                    }
+                }
             }
         }
         if self.board.running() {
             ctx.request_repaint();
+        }
+    }
+
+    fn speed_choice(&mut self, ui: &mut egui::Ui) {
+        for s in [Speed::Maximal, Speed::Echtzeit, Speed::Langsam] {
+            if ui.radio(self.speed == s, s.name()).on_hover_text(s.hint()).clicked() {
+                self.speed = s;
+                self.realtime_anchor = None;
+                self.save_ini();
+            }
+        }
+        if self.speed == Speed::Langsam {
+            let r = ui.add(
+                egui::DragValue::new(&mut self.slow_ips)
+                    .range(0.5..=1000.0)
+                    .speed(0.5)
+                    .suffix(" Befehle/s"),
+            );
+            if r.changed() {
+                self.save_ini();
+            }
         }
     }
 
@@ -334,10 +389,8 @@ impl PicSimApp {
                     }
                 }
                 ui.separator();
-                if ui.checkbox(&mut self.realtime, "Echtzeit").on_hover_text("Simulation läuft so schnell wie der echte PIC").changed() {
-                    self.realtime_anchor = None;
-                    self.save_ini();
-                }
+                ui.label("Tempo bei Go");
+                self.speed_choice(ui);
             });
             ui.menu_button("Einstellungen", |ui| self.dialogs.menu(ui));
             if ui.button("Quelltext bearbeiten").clicked() {
@@ -457,9 +510,9 @@ impl PicSimApp {
             if ui.add_sized([w, 32.0], go_btn).clicked() {
                 self.go();
             }
-            if ui.checkbox(&mut self.realtime, "Echtzeit").changed() {
-                self.realtime_anchor = None;
-            }
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new("Tempo").small());
+            self.speed_choice(ui);
         });
     }
 
@@ -531,6 +584,31 @@ impl eframe::App for PicSimApp {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_ini();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Speed {
+    Maximal,
+    Echtzeit,
+    Langsam,
+}
+
+impl Speed {
+    fn name(self) -> &'static str {
+        match self {
+            Speed::Maximal => "Maximal",
+            Speed::Echtzeit => "Echtzeit",
+            Speed::Langsam => "Langsam",
+        }
+    }
+
+    fn hint(self) -> &'static str {
+        match self {
+            Speed::Maximal => "So schnell wie möglich",
+            Speed::Echtzeit => "So schnell wie der echte PIC mit dem eingestellten Quarz",
+            Speed::Langsam => "Wenige Befehle je Sekunde, die grüne Zeile wandert sichtbar mit",
+        }
     }
 }
 
