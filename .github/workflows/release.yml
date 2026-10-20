@@ -1,6 +1,6 @@
 name: Release
 
-# Ein Tag wie v0.2.0 baut die Pakete für Linux und macOS und legt das
+# Ein Tag wie v0.2.0 baut die Pakete für Linux, macOS und Windows und legt das
 # GitHub-Release an. Der eingebaute Updater holt sich von dort die neue Version.
 
 on:
@@ -19,6 +19,8 @@ jobs:
             asset: picsim-linux-x86_64.tar.gz
           - os: macos-14
             asset: picsim-macos-aarch64.tar.gz
+          - os: windows-latest
+            asset: picsim-windows-x86_64.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -69,9 +71,22 @@ jobs:
           codesign --force --deep -s - "$app"
           tar -C dist -czf "${{ matrix.asset }}" PicSim.app
 
+      - name: Windows-Paket
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/picsim | Out-Null
+          Copy-Item target/release/picsim.exe, README.md dist/picsim/
+          Compress-Archive -Path dist/picsim -DestinationPath "${{ matrix.asset }}"
+
       - name: Prüfsumme
         shell: bash
-        run: shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+        run: |
+          if command -v sha256sum >/dev/null; then
+            sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          else
+            shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

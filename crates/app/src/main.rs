@@ -3,6 +3,9 @@
 //! Aufruf wie beim Original: `picsim [datei[.lst]]`. Eine `.src`-Datei
 //! wird im Editor geöffnet und gleich übersetzt.
 
+// Unter Windows kein Konsolenfenster neben dem Programm (nur im Release-Build).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod app;
 mod apps;
 mod canvas;

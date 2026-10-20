@@ -44,6 +44,7 @@ pub fn asset_name() -> Option<&'static str> {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("linux", "x86_64") => Some("picsim-linux-x86_64.tar.gz"),
         ("macos", "aarch64") => Some("picsim-macos-aarch64.tar.gz"),
+        ("windows", "x86_64") => Some("picsim-windows-x86_64.zip"),
         _ => None,
     }
 }
@@ -114,6 +115,9 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// Name der Programmdatei im Paket.
+const BIN_NAME: &str = if cfg!(windows) { "picsim.exe" } else { "picsim" };
+
 /// Lädt das Paket, prüft die Prüfsumme und holt die Programmdatei heraus.
 fn fetch_binary(rel: &Release) -> Result<Vec<u8>, String> {
     let data = download(&rel.asset_url)?;
@@ -126,14 +130,22 @@ fn fetch_binary(rel: &Release) -> Result<Vec<u8>, String> {
     if expected != hex(&Sha256::digest(&data)) {
         return Err("Prüfsumme stimmt nicht, Update abgebrochen".into());
     }
+    if rel.asset_url.ends_with(".zip") {
+        from_zip(&data, BIN_NAME)
+    } else {
+        from_tar_gz(&data, BIN_NAME)
+    }
+}
 
-    let gz = flate2::read::GzDecoder::new(&data[..]);
+/// Programmdatei aus einem .tar.gz (Linux, macOS).
+fn from_tar_gz(data: &[u8], bin_name: &str) -> Result<Vec<u8>, String> {
+    let gz = flate2::read::GzDecoder::new(data);
     let mut archive = tar::Archive::new(gz);
     let mut binary = None;
     for entry in archive.entries().map_err(|e| format!("Paket defekt: {e}"))? {
         let mut entry = entry.map_err(|e| format!("Paket defekt: {e}"))?;
         let path = entry.path().map_err(|e| e.to_string())?.into_owned();
-        if path.file_name().is_some_and(|n| n == "picsim") && entry.header().entry_type().is_file() {
+        if path.file_name().is_some_and(|n| n == bin_name) && entry.header().entry_type().is_file() {
             let mut buf = Vec::new();
             entry.read_to_end(&mut buf).map_err(|e| format!("Paket defekt: {e}"))?;
             binary = Some(buf);
@@ -141,6 +153,21 @@ fn fetch_binary(rel: &Release) -> Result<Vec<u8>, String> {
         }
     }
     binary.ok_or_else(|| "Im Paket fehlt die Programmdatei".to_string())
+}
+
+/// Programmdatei aus einem .zip (Windows).
+fn from_zip(data: &[u8], bin_name: &str) -> Result<Vec<u8>, String> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data)).map_err(|e| format!("Paket defekt: {e}"))?;
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i).map_err(|e| format!("Paket defekt: {e}"))?;
+        let is_bin = file.enclosed_name().is_some_and(|p| p.file_name().is_some_and(|n| n == bin_name));
+        if is_bin && file.is_file() {
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf).map_err(|e| format!("Paket defekt: {e}"))?;
+            return Ok(buf);
+        }
+    }
+    Err("Im Paket fehlt die Programmdatei".to_string())
 }
 
 /// Lädt das Release und ersetzt die laufende Programmdatei.
@@ -258,6 +285,23 @@ mod tests {
         if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
             assert_eq!(asset_name(), Some("picsim-linux-x86_64.tar.gz"));
         }
+        if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+            assert_eq!(asset_name(), Some("picsim-windows-x86_64.zip"));
+        }
+    }
+
+    #[test]
+    fn binary_from_zip() {
+        use std::io::Write;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        zip.start_file("picsim/README.md", opts).unwrap();
+        zip.write_all(b"liesmich").unwrap();
+        zip.start_file("picsim/picsim.exe", opts).unwrap();
+        zip.write_all(b"MZ programm").unwrap();
+        let data = zip.finish().unwrap().into_inner();
+        assert_eq!(from_zip(&data, "picsim.exe").unwrap(), b"MZ programm");
+        assert!(from_zip(&data, "fehlt.exe").is_err());
     }
 
     /// Lädt das echte, neueste Release von GitHub. Braucht Netz, daher nur
@@ -269,6 +313,9 @@ mod tests {
         let bin = fetch_binary(&rel).unwrap();
         if cfg!(target_os = "linux") {
             assert_eq!(&bin[..4], b"\x7fELF");
+        }
+        if cfg!(windows) {
+            assert_eq!(&bin[..2], b"MZ");
         }
         assert!(bin.len() > 1_000_000);
     }

@@ -4,6 +4,7 @@ description = "PIC16F84-Simulator mit Assembler und Editor"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+build = "build.rs"
 
 [[bin]]
 name = "picsim"
@@ -23,4 +24,8 @@ semver = "1.0.28"
 self-replace = "1.5.0"
 flate2 = "1.1.10"
 tar = "0.4.46"
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }
 sha2 = "0.10"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1.34"

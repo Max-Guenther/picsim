@@ -1,0 +1,4 @@
+# Keine Zeilenende-Umwandlung beim Auschecken, auch nicht unter Windows.
+# Die Beispiele und Original-Listings müssen Byte für Byte gleich bleiben,
+# sonst schlagen die Golden-Tests fehl.
+* -text

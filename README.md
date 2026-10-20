@@ -1,6 +1,6 @@
 # PicSim
 
-Simulator für den PIC16F84 mit eingebautem Assembler und Code-Editor, für Linux und macOS (Apple Silicon).
+Simulator für den PIC16F84 mit eingebautem Assembler und Code-Editor, für Linux, macOS (Apple Silicon) und Windows.
 
 PicSim ist eine komplette Neuentwicklung nach dem Vorbild von **PicSimu 0.51** (Stefan Lehmann). Bedienung, Tastenkürzel, LST-Format und `picsimu.ini` sind gleich geblieben. Der Assembler ist kompatibel zu **iL_ASS16**, Wine wird nicht mehr gebraucht.
 
@@ -12,6 +12,8 @@ curl -fsSL https://raw.githubusercontent.com/Max-Guenther/picsim/main/install.sh
 
 - **Linux (x86_64):** Programm nach `~/.local/bin/picsim`, Starter im Anwendungsmenü
 - **macOS (Apple Silicon):** `PicSim.app` nach `/Applications`
+
+**Windows (64 Bit):** `picsim-windows-x86_64.zip` vom [neuesten Release](https://github.com/Max-Guenther/picsim/releases/latest) laden, entpacken und `picsim.exe` starten. Eine Installation braucht es nicht. Weil das Programm nicht signiert ist, warnt Windows beim ersten Start: auf "Weitere Informationen" und dann "Trotzdem ausführen" klicken.
 
 Danach hält sich PicSim selbst aktuell: Beim Start fragt es GitHub nach einer neuen Version und bietet ein Update an (abschaltbar unter Hilfe).
 

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.5.0
+
+- PicSim gibt es jetzt auch für Windows (64 Bit): `picsim-windows-x86_64.zip` laden, entpacken, `picsim.exe` starten. Der eingebaute Updater funktioniert dort genauso
+
 ## 0.4.0
 
 - Fenstermodus wählbar unter Einstellungen > Fenster frei verschieben. An: Jeder Bereich ist ein eigenes Fenster wie in 0.3.0. Aus: Alle Bereiche liegen fest angeordnet im Programmfenster und wachsen mit, nichts schiebt sich übereinander
