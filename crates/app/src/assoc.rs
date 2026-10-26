@@ -64,6 +64,9 @@ pub fn register() {
     if let Some(exe) = installed_exe() {
         windows::register(&exe);
     }
+    // Dateityp steht in der Info.plist, hier nur das Öffnen vorbereiten
+    #[cfg(target_os = "macos")]
+    mac::observe_launch();
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -193,48 +196,83 @@ mod windows {
 
 #[cfg(target_os = "macos")]
 mod mac {
+    //! winit braucht seinen eigenen App-Delegate und bricht ab, wenn man ihn
+    //! ersetzt. Deshalb bekommt die Klasse von winits Delegate nur die eine
+    //! Methode `application:openURLs:` dazu. Das passiert schon bei
+    //! `applicationWillFinishLaunching`, damit auch die Datei ankommt, mit der
+    //! die App per Doppelklick gestartet wurde.
     use objc2::rc::Retained;
-    use objc2::runtime::ProtocolObject;
-    use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSApplication, NSApplicationDelegate};
-    use objc2_foundation::{NSArray, NSObject, NSObjectProtocol, NSURL};
+    use objc2::runtime::{AnyObject, Imp, Sel};
+    use objc2::{define_class, ffi, msg_send, sel, MainThreadMarker, MainThreadOnly};
+    use objc2_app_kit::{NSApplication, NSApplicationWillFinishLaunchingNotification};
+    use objc2_foundation::{NSArray, NSNotification, NSNotificationCenter, NSObject, NSURL};
+
+    unsafe extern "C-unwind" fn open_urls(_this: *mut AnyObject, _cmd: Sel, _app: *mut AnyObject, urls: *mut NSArray<NSURL>) {
+        // SAFETY: AppKit übergibt ein gültiges NSArray mit NSURLs
+        let Some(urls) = (unsafe { urls.as_ref() }) else { return };
+        for url in urls.iter() {
+            if let Some(path) = url.path() {
+                super::push_opened(path.to_string().into());
+            }
+        }
+    }
+
+    /// Methode an winits Delegate anhängen. Mehrfacher Aufruf schadet nicht.
+    fn add_method(mtm: MainThreadMarker) {
+        let app = NSApplication::sharedApplication(mtm);
+        let Some(delegate) = app.delegate() else { return };
+        let obj: &AnyObject = (*delegate).as_ref();
+        let cls = obj.class();
+        if cls.instance_method(sel!(application:openURLs:)).is_some() {
+            return;
+        }
+        // SAFETY: Signatur passt zu "v@:@@" (void, self, _cmd, NSApplication*, NSArray*)
+        unsafe {
+            let imp: Imp = std::mem::transmute(open_urls as unsafe extern "C-unwind" fn(_, _, _, _));
+            ffi::class_addMethod((cls as *const objc2::runtime::AnyClass).cast_mut(), sel!(application:openURLs:), imp, c"v@:@@".as_ptr());
+        }
+        // AppKit merkt sich beim Setzen, was der Delegate kann: neu setzen, gleiches Objekt
+        app.setDelegate(Some(&delegate));
+    }
 
     define_class!(
         // SAFETY: NSObject hat keine Anforderungen an Unterklassen, kein Drop.
         #[unsafe(super = NSObject)]
         #[thread_kind = MainThreadOnly]
-        struct OpenDelegate;
+        struct LaunchObserver;
 
-        unsafe impl NSObjectProtocol for OpenDelegate {}
-
-        unsafe impl NSApplicationDelegate for OpenDelegate {
-            // SAFETY: Signatur wie in NSApplicationDelegate
-            #[unsafe(method(application:openURLs:))]
-            fn open_urls(&self, _app: &NSApplication, urls: &NSArray<NSURL>) {
-                for url in urls.iter() {
-                    if let Some(path) = url.path() {
-                        super::push_opened(path.to_string().into());
-                    }
-                }
+        impl LaunchObserver {
+            #[unsafe(method(willFinish:))]
+            fn will_finish(&self, _note: &NSNotification) {
+                add_method(self.mtm());
             }
         }
     );
 
-    impl OpenDelegate {
-        fn new(mtm: MainThreadMarker) -> Retained<Self> {
-            let this = Self::alloc(mtm).set_ivars(());
-            // SAFETY: init von NSObject
-            unsafe { msg_send![super(this), init] }
+    /// Vor dem Start der Ereignisschleife aufrufen.
+    pub fn observe_launch() {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let this = LaunchObserver::alloc(mtm).set_ivars(());
+        // SAFETY: init von NSObject
+        let observer: Retained<LaunchObserver> = unsafe { msg_send![super(this), init] };
+        // SAFETY: willFinish: existiert und nimmt eine NSNotification
+        unsafe {
+            NSNotificationCenter::defaultCenter().addObserver_selector_name_object(
+                &observer,
+                sel!(willFinish:),
+                Some(NSApplicationWillFinishLaunchingNotification),
+                None,
+            );
         }
+        // Das Notification Center hält den Beobachter nicht fest
+        std::mem::forget(observer);
     }
 
+    /// Falls die Benachrichtigung schon vorbei war.
     pub fn install() {
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let delegate = OpenDelegate::new(mtm);
-        let app = NSApplication::sharedApplication(mtm);
-        app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
-        // NSApplication hält den Delegate nur schwach: für die ganze Laufzeit behalten
-        std::mem::forget(delegate);
+        if let Some(mtm) = MainThreadMarker::new() {
+            add_method(mtm);
+        }
     }
 }
 

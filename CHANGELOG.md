@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.7.3
+
+- Mac: PicSim 0.7.2 stürzte direkt beim Start ab. Die Dateiverknüpfung hatte den internen Ereignis-Empfänger der App ersetzt, den das Fenstersystem selbst braucht. Jetzt wird er nur ergänzt
+
 ## 0.7.2
 
 - Schritt, Go und Reset nehmen immer den aktuellen Quelltext. Wurde er seit dem letzten Übersetzen geändert (auch nur mit Strg+S gespeichert oder in einem anderen Editor bearbeitet), übersetzt PicSim ihn vorher neu und startet von vorn. Bisher lief dann still das alte Programm weiter, zum Beispiel stand nach einem geänderten `movlw` noch der alte Wert in W. Hat der Quelltext Fehler, führt PicSim nichts aus und sagt Bescheid
