@@ -2,6 +2,7 @@
 
 ## 0.6.2
 
+- Werte im Datenspeicher ändern funktioniert wieder: Zelle anklicken, Hexwert eintippen, Enter. Vorher blieb der alte Wert stehen. Escape oder Wegklicken bricht ab
 - Beschriftungen in gezeichneten Bauteilen (Schalter, Taster, LCD, 7-Segment, Ampel, Getränkeautomat) bleiben scharf, egal wie groß das Fenster ist. Vorher wurde der Text klein gesetzt und dann hochgezogen und sah dadurch pixelig aus
 
 ## 0.6.1

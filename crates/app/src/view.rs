@@ -34,23 +34,53 @@ pub fn ram(app: &mut PicSimApp, ui: &mut egui::Ui) {
         });
 }
 
+/// Ergebnis des Eingabefelds für eine Speicherzelle.
+#[derive(Debug, PartialEq)]
+enum CellEdit {
+    /// Noch in Bearbeitung.
+    Open,
+    /// Mit Enter bestätigt (None: keine gültige Hexzahl).
+    Commit(Option<u8>),
+    /// Weggeklickt oder Escape.
+    Cancel,
+}
+
+/// Eingabefeld für einen Hexwert. Holt sich beim ersten Bild den Fokus und
+/// meldet, wenn die Eingabe beendet ist.
+fn hex_edit(ui: &mut egui::Ui, text: &mut String) -> CellEdit {
+    let r = ui.add(
+        egui::TextEdit::singleline(text)
+            .desired_width(20.0)
+            .char_limit(2)
+            .font(egui::TextStyle::Monospace),
+    );
+    // lost_focus erst prüfen: ein request_focus davor würde den Fokus
+    // zurückholen, und Enter käme nie an
+    if r.lost_focus() {
+        return if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            CellEdit::Commit(u8::from_str_radix(text.trim(), 16).ok())
+        } else {
+            CellEdit::Cancel
+        };
+    }
+    if !r.has_focus() {
+        r.request_focus();
+    }
+    CellEdit::Open
+}
+
 fn ram_cell(app: &mut PicSimApp, ui: &mut egui::Ui, addr: u8) {
     if let Some((a, text)) = &mut app.ram_edit {
         if *a == addr {
-            let r = ui.add(
-                egui::TextEdit::singleline(text)
-                    .desired_width(20.0)
-                    .char_limit(2)
-                    .font(egui::TextStyle::Monospace),
-            );
-            r.request_focus();
-            if r.lost_focus() {
-                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    if let Ok(v) = u8::from_str_radix(text.trim(), 16) {
+            match hex_edit(ui, text) {
+                CellEdit::Open => {}
+                CellEdit::Commit(v) => {
+                    if let Some(v) = v {
                         app.board.cpu.poke(addr, v);
                     }
+                    app.ram_edit = None;
                 }
-                app.ram_edit = None;
+                CellEdit::Cancel => app.ram_edit = None,
             }
             return;
         }
@@ -266,5 +296,44 @@ pub fn listing(app: &mut PicSimApp, ui: &mut egui::Ui) {
         if app.board.running() && !inner.contains(&line) {
             app.scroll_to_pc = true;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Ein Bild mit den gegebenen Tasten zeichnen.
+    fn frame(ctx: &egui::Context, text: &mut String, keys: &[egui::Key]) -> CellEdit {
+        let mut input = egui::RawInput::default();
+        input.focused = true;
+        for &key in keys {
+            for pressed in [true, false] {
+                input.events.push(egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: egui::Modifiers::NONE });
+            }
+        }
+        let mut res = CellEdit::Open;
+        let mut out = ctx.run_ui(input, |ui| res = hex_edit(ui, text));
+        out.textures_delta.clear();
+        res
+    }
+
+    #[test]
+    fn enter_commits_value() {
+        let ctx = egui::Context::default();
+        let mut text = "00".to_string();
+        assert_eq!(frame(&ctx, &mut text, &[]), CellEdit::Open);
+        assert_eq!(frame(&ctx, &mut text, &[]), CellEdit::Open);
+        text = "3F".into();
+        assert_eq!(frame(&ctx, &mut text, &[egui::Key::Enter]), CellEdit::Commit(Some(0x3F)));
+    }
+
+    #[test]
+    fn escape_cancels() {
+        let ctx = egui::Context::default();
+        let mut text = "00".to_string();
+        frame(&ctx, &mut text, &[]);
+        frame(&ctx, &mut text, &[]);
+        assert_eq!(frame(&ctx, &mut text, &[egui::Key::Escape]), CellEdit::Cancel);
     }
 }
