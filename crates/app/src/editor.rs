@@ -68,6 +68,8 @@ pub struct Editor {
     pub path: Option<PathBuf>,
     pub text: String,
     saved: String,
+    /// Text der letzten fehlerfreien Übersetzung, None: seit dem Laden nicht übersetzt.
+    assembled: Option<String>,
     errors: Vec<AsmError>,
     message: String,
     scroll_to_line: Option<usize>,
@@ -97,6 +99,12 @@ enum EditorDialog {
     Open,
 }
 
+/// Wurde `a` später geändert als `b`?
+fn newer(a: &Path, b: &Path) -> bool {
+    let time = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    matches!((time(a), time(b)), (Some(a), Some(b)) if a > b)
+}
+
 impl Default for Editor {
     fn default() -> Self {
         Editor {
@@ -104,6 +112,7 @@ impl Default for Editor {
             path: None,
             text: TEMPLATE.to_string(),
             saved: TEMPLATE.to_string(),
+            assembled: None,
             errors: Vec::new(),
             message: String::new(),
             scroll_to_line: None,
@@ -120,6 +129,19 @@ impl Editor {
         self.text != self.saved
     }
 
+    /// Passt das geladene Programm `lst` nicht mehr zu diesem Quelltext?
+    /// Etwa nach Strg+S ohne Übersetzen oder wenn die Quelle neuer ist als das Listing.
+    pub fn outdated(&self, lst: &Path) -> bool {
+        let Some(src) = &self.path else { return false };
+        if src.with_extension("") != lst.with_extension("") {
+            return false;
+        }
+        match &self.assembled {
+            Some(text) => *text != self.text,
+            None => self.dirty() || newer(src, lst),
+        }
+    }
+
     pub fn has_focus(&self, ctx: &egui::Context) -> bool {
         self.open && ctx.memory(|m| m.has_focus(self.text_id))
     }
@@ -130,6 +152,7 @@ impl Editor {
                 let text = picsim_core::lst::decode_text(&bytes).replace("\r\n", "\n");
                 self.text = text.clone();
                 self.saved = text;
+                self.assembled = None;
                 self.path = Some(path.to_path_buf());
                 self.errors.clear();
                 self.message = format!("{} geöffnet", path.display());
@@ -238,6 +261,7 @@ impl Editor {
     fn new_file(&mut self) {
         self.text = TEMPLATE.to_string();
         self.saved = String::new();
+        self.assembled = None;
         self.path = None;
         self.errors.clear();
         self.message = "Neue Datei".into();
@@ -262,10 +286,11 @@ impl Editor {
                 self.errors = out.errors.clone();
                 let n_err = out.errors.iter().filter(|e| !e.warning).count();
                 if out.ok() {
+                    self.assembled = Some(self.text.clone());
                     self.message = format!("Fehlerfrei übersetzt, {} von 1024 Wörtern belegt. Programm geladen.", out.words.len());
                     Some(EditorAction::Loaded(lst))
                 } else {
-                    self.message = format!("{n_err} Fehler, Programm wurde nicht geladen");
+                    self.message = format!("{n_err} Fehler, Programm wurde nicht geladen. Im Simulator läuft noch das alte.");
                     let file = self.file_name();
                     if let Some(first) = self.errors.iter().find(|e| !e.warning && e.file == file) {
                         self.scroll_to_line = Some(first.src_line);

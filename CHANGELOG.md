@@ -2,6 +2,7 @@
 
 ## 0.7.2
 
+- Schritt, Go und Reset nehmen immer den aktuellen Quelltext. Wurde er seit dem letzten Übersetzen geändert (auch nur mit Strg+S gespeichert oder in einem anderen Editor bearbeitet), übersetzt PicSim ihn vorher neu und startet von vorn. Bisher lief dann still das alte Programm weiter, zum Beispiel stand nach einem geänderten `movlw` noch der alte Wert in W. Hat der Quelltext Fehler, führt PicSim nichts aus und sagt Bescheid
 - Doppelklick auf eine `.picsim`-Datei öffnet PicSim mit dem Projekt. PicSim trägt sich dafür beim Start selbst als Programm für Projektdateien ein, nur für den eigenen Benutzer und ohne Adminrechte. Unter Windows wird der Pfad bei jedem Start erneuert, falls `picsim.exe` verschoben wurde. Auf dem Mac geht das über die PicSim.app, auch wenn PicSim schon läuft
 
 ## 0.7.1

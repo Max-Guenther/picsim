@@ -337,12 +337,31 @@ impl PicSimApp {
     // ------------------------------------------------------------------
     // Steuerung
 
+    /// Vor dem Ausführen: Wurde der Quelltext zum geladenen Programm seit dem
+    /// letzten Übersetzen geändert, erst neu übersetzen und laden. Sonst liefe
+    /// still das alte Programm. false: Quelltext hat Fehler, nicht ausführen.
+    fn sync_program(&mut self) -> bool {
+        let Some(lst) = self.lst_path.clone() else { return true };
+        if !self.editor.outdated(&lst) {
+            return true;
+        }
+        if let Some(EditorAction::Loaded(lst)) = self.editor.assemble() {
+            self.open_lst(&lst);
+            self.status = "Quelltext geändert: neu übersetzt und von vorn gestartet".into();
+            return true;
+        }
+        self.editor.open = true;
+        self.alert = Some("Der geänderte Quelltext hat Fehler und wurde nicht geladen. Bitte erst die Fehler im Editor beheben.".into());
+        false
+    }
+
     fn before_step(&mut self) {
         self.prev_ram = ram_snapshot(&self.board);
         self.alert = None;
     }
 
     pub fn reset(&mut self) {
+        self.sync_program();
         self.board.reset();
         self.prev_ram = ram_snapshot(&self.board);
         self.status = "Reset".into();
@@ -350,12 +369,18 @@ impl PicSimApp {
     }
 
     pub fn step_in(&mut self) {
+        if !self.sync_program() {
+            return;
+        }
         self.before_step();
         let stop = self.board.step_in();
         self.handle_stop(stop);
     }
 
     pub fn step_over(&mut self) {
+        if !self.sync_program() {
+            return;
+        }
         self.before_step();
         let stop = self.board.step_over();
         self.realtime_anchor = None;
@@ -363,18 +388,27 @@ impl PicSimApp {
     }
 
     pub fn step_out(&mut self) {
+        if !self.sync_program() {
+            return;
+        }
         self.before_step();
         self.board.step_out();
         self.realtime_anchor = None;
     }
 
     pub fn ignore(&mut self) {
+        if !self.sync_program() {
+            return;
+        }
         self.before_step();
         self.board.ignore();
         self.scroll_to_pc = true;
     }
 
     pub fn go(&mut self) {
+        if !self.board.running() && !self.sync_program() {
+            return;
+        }
         self.before_step();
         self.board.go();
         self.realtime_anchor = None;
@@ -1256,4 +1290,77 @@ mod tests {
         assert!(c.editor.text.contains("decf"));
         std::fs::remove_dir_all(&root).unwrap();
     }
+
+    /// Julians Fall: movlw geändert, nur gespeichert, Schritt zeigt den alten Wert.
+    #[test]
+    fn changed_source_is_assembled_before_running() {
+        let root = std::env::temp_dir().join(format!("picsim-stale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("w.src");
+        std::fs::write(&file, "\torg\t0\n\tmovlw\t0F0h\n\tgoto\t0\n\tend\n").unwrap();
+        let mut app = machine(&root, "a");
+        app.open_any(&file);
+        app.step_in();
+        assert_eq!(app.board.cpu.w, 0xF0);
+
+        // Nur gespeichert, nicht übersetzt
+        app.editor.text = app.editor.text.replace("0F0h", "010h");
+        assert!(app.editor.save_if_dirty());
+        app.step_in();
+        assert_eq!(app.board.cpu.w, 0x10, "neu übersetzt und von vorn");
+        assert_eq!(app.board.cpu.pc, 1);
+
+        // Ungespeichert geändert: ebenso
+        app.editor.text = app.editor.text.replace("010h", "022h");
+        app.go();
+        assert!(app.board.running());
+        app.board.run(10);
+        app.go();
+        assert_eq!(app.board.cpu.w, 0x22);
+        assert!(!app.editor.dirty(), "beim Übersetzen gespeichert");
+
+        // Unverändert: kein Neustart, der Schritt geht weiter
+        app.reset();
+        app.step_in();
+        app.step_in();
+        assert_eq!(app.board.cpu.pc, 0, "goto 0 ausgeführt, nicht neu geladen");
+
+        // Fehler im Quelltext: nicht ausführen, deutlich melden
+        app.editor.text = app.editor.text.replace("movlw\t022h", "movlw\tgibtsnicht");
+        let pc = app.board.cpu.pc;
+        app.step_in();
+        assert!(app.alert.is_some());
+        assert_eq!(app.board.cpu.pc, pc, "kein Schritt mit dem alten Programm");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Beim Start: Quelle wurde außerhalb geändert und ist neuer als das Listing.
+    #[test]
+    fn newer_source_than_listing_is_assembled() {
+        let root = std::env::temp_dir().join(format!("picsim-newer-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("w.src");
+        std::fs::write(&file, "\tmovlw\t0F0h\n\tend\n").unwrap();
+        let (_, lst) = picsim_asm::assemble_file(&file).unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        std::fs::File::options().write(true).open(&lst).unwrap().set_modified(old).unwrap();
+        std::fs::write(&file, "\tmovlw\t010h\n\tend\n").unwrap();
+
+        let mut app = machine(&root, "a");
+        app.open_any(&lst);
+        assert_eq!(app.editor.path.as_deref(), Some(file.as_path()));
+        app.step_in();
+        assert_eq!(app.board.cpu.w, 0x10);
+
+        // Listing neuer als die Quelle: so lassen, wie es ist
+        std::fs::write(&lst, std::fs::read(&lst).unwrap()).unwrap();
+        let mut app = machine(&root, "b");
+        app.open_any(&lst);
+        app.step_in();
+        assert_eq!(app.board.cpu.pc, 1);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
 }
