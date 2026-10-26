@@ -1,6 +1,7 @@
 //! Eingebauter Editor für PIC-Assembler mit Syntax-Hervorhebung,
 //! Zeilennummern, Fehleranzeige und "Assemblieren & Laden".
 
+use crate::dialog::{self, FileDialog};
 use eframe::egui::{self, text::LayoutJob, Color32, FontId, RichText, TextFormat};
 use picsim_asm::AsmError;
 use std::collections::HashSet;
@@ -74,11 +75,25 @@ pub struct Editor {
     text_id: egui::Id,
     /// Abstand der Tabstopps in Zeichen.
     pub tab_width: usize,
+    dialog: Option<FileDialog<EditorDialog>>,
 }
 
 #[derive(Clone, Copy)]
 enum Pending {
     New,
+    Open,
+}
+
+/// Was nach dem Speichern unter einem neuen Namen passieren soll.
+#[derive(Clone, Copy)]
+enum AfterSave {
+    Saved,
+    Assemble,
+    Run(Pending),
+}
+
+enum EditorDialog {
+    SaveAs(AfterSave),
     Open,
 }
 
@@ -95,6 +110,7 @@ impl Default for Editor {
             confirm_discard: None,
             text_id: egui::Id::unique("editor_text"),
             tab_width: DEFAULT_TAB,
+            dialog: None,
         }
     }
 }
@@ -140,35 +156,65 @@ impl Editor {
         }
     }
 
-    fn save(&mut self) -> bool {
+    /// Speichert sofort, wenn die Datei schon einen Namen hat. Sonst wird
+    /// nach dem Namen gefragt und `after` folgt, sobald gespeichert ist.
+    fn save(&mut self, after: AfterSave) -> bool {
         match self.path.clone() {
             Some(p) => self.save_to(&p),
-            None => self.save_as(),
+            None => {
+                self.save_as(after);
+                false
+            }
         }
     }
 
-    fn save_as(&mut self) -> bool {
+    fn save_as(&mut self, after: AfterSave) {
+        if self.dialog.is_some() {
+            return;
+        }
         let name = self
             .path
             .as_ref()
             .and_then(|p| p.file_name())
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "programm.src".into());
-        let dlg = rfd::FileDialog::new().add_filter("Quelltext", &["src", "SRC", "asm"]).set_file_name(name);
-        match dlg.save_file() {
-            Some(mut p) => {
-                if p.extension().is_none() {
-                    p.set_extension("src");
-                }
-                self.save_to(&p)
-            }
-            None => false,
-        }
+        let dlg = rfd::AsyncFileDialog::new().add_filter("Quelltext", &["src", "SRC", "asm"]).set_file_name(name);
+        self.dialog = Some(FileDialog::save(dlg, EditorDialog::SaveAs(after)));
     }
 
     fn open_dialog(&mut self) {
-        if let Some(p) = rfd::FileDialog::new().add_filter("Quelltext", &["src", "SRC", "asm"]).pick_file() {
-            self.load(&p);
+        if self.dialog.is_some() {
+            return;
+        }
+        let dlg = rfd::AsyncFileDialog::new().add_filter("Quelltext", &["src", "SRC", "asm"]);
+        self.dialog = Some(FileDialog::open(dlg, EditorDialog::Open));
+    }
+
+    /// Ergebnis eines fertigen Dateidialogs verarbeiten.
+    fn finish_dialog(&mut self, ctx: &egui::Context) -> Option<EditorAction> {
+        let (purpose, path) = dialog::poll(&mut self.dialog, ctx)?;
+        let mut path = path?;
+        match purpose {
+            EditorDialog::Open => {
+                self.load(&path);
+                None
+            }
+            EditorDialog::SaveAs(after) => {
+                if path.extension().is_none() {
+                    path.set_extension("src");
+                }
+                if !self.save_to(&path) {
+                    return None;
+                }
+                match after {
+                    AfterSave::Saved => Some(EditorAction::Saved),
+                    AfterSave::Assemble => self.assemble(),
+                    AfterSave::Run(p) => {
+                        self.run_pending(p);
+                        None
+                    }
+                }
+            }
         }
     }
 
@@ -190,7 +236,7 @@ impl Editor {
 
     /// Speichert, übersetzt und schreibt LST/HEX/ERR/SYM neben die Quelle.
     pub fn assemble(&mut self) -> Option<EditorAction> {
-        if (self.dirty() || self.path.is_none()) && !self.save() {
+        if (self.dirty() || self.path.is_none()) && !self.save(AfterSave::Assemble) {
             return None;
         }
         let path = self.path.clone()?;
@@ -229,13 +275,13 @@ impl Editor {
     }
 
     pub fn show(&mut self, ctx: &egui::Context) -> Option<EditorAction> {
+        let mut action = self.finish_dialog(ctx);
         if !self.open {
-            return None;
+            return action;
         }
-        let mut action = None;
 
         // Tastenkürzel, solange der Editor offen ist
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) && self.save() {
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) && self.save(AfterSave::Saved) {
             action = Some(EditorAction::Saved);
         }
         let assemble_key = ctx.input_mut(|i| {
@@ -261,11 +307,11 @@ impl Editor {
                     if ui.button("Öffnen…").clicked() {
                         self.ask_or_run(Pending::Open);
                     }
-                    if ui.button("Speichern").on_hover_text("Strg+S").clicked() && self.save() {
+                    if ui.button("Speichern").on_hover_text("Strg+S").clicked() && self.save(AfterSave::Saved) {
                         action = Some(EditorAction::Saved);
                     }
-                    if ui.button("Speichern unter…").clicked() && self.save_as() {
-                        action = Some(EditorAction::Saved);
+                    if ui.button("Speichern unter…").clicked() {
+                        self.save_as(AfterSave::Saved);
                     }
                     ui.separator();
                     let asm_btn = egui::Button::new(RichText::new("Assemblieren & Laden").strong());
@@ -408,9 +454,11 @@ impl Editor {
             .show(ctx, |ui| {
                 ui.label("Der Quelltext hat ungespeicherte Änderungen.");
                 ui.horizontal(|ui| {
-                    if ui.button("Speichern").clicked() && self.save() {
+                    if ui.button("Speichern").clicked() {
                         self.confirm_discard = None;
-                        self.run_pending(pending);
+                        if self.save(AfterSave::Run(pending)) {
+                            self.run_pending(pending);
+                        }
                     }
                     if ui.button("Verwerfen").clicked() {
                         self.confirm_discard = None;

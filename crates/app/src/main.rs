@@ -9,6 +9,7 @@
 mod app;
 mod apps;
 mod canvas;
+mod dialog;
 mod editor;
 mod layout;
 mod periph;

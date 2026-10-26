@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.6.3
+
+- Absturz auf dem Mac behoben: Bewegte man im Fenster "Speichern unter" oder "Öffnen" das Trackpad oder die Maus auf bestimmte Weise, beendete sich PicSim sofort. Alle Dateidialoge laufen jetzt, ohne das Programm anzuhalten, auf dem Mac als Fenster, das am PicSim-Fenster hängt
+
 ## 0.6.2
 
 - Werte im Datenspeicher ändern funktioniert wieder: Zelle anklicken, Hexwert eintippen, Enter. Vorher blieb der alte Wert stehen. Escape oder Wegklicken bricht ab

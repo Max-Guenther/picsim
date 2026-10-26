@@ -1,6 +1,7 @@
 //! Hauptfenster: Menü, Steuerpult, Simulationsschleife, Dateien.
 
 use crate::apps::Apps;
+use crate::dialog::{self, FileDialog};
 use crate::editor::{Editor, EditorAction};
 use crate::layout::Layout;
 use crate::reference::{Reference, Tab};
@@ -60,6 +61,14 @@ pub struct PicSimApp {
     updater: Updater,
     pub auto_update: bool,
     zoom: f32,
+    file_dialog: Option<FileDialog<AppDialog>>,
+}
+
+/// Wofür der Dateidialog im Menü Datei geöffnet wurde.
+enum AppDialog {
+    Open,
+    ImportIni,
+    ExportIni,
 }
 
 impl PicSimApp {
@@ -104,6 +113,7 @@ impl PicSimApp {
             updater: Updater::default(),
             auto_update,
             zoom,
+            file_dialog: None,
         };
         cc.egui_ctx.set_zoom_factor(zoom);
         if let Some(n) = app.board.ini.number("EDITOR", "TABBREITE") {
@@ -380,24 +390,45 @@ impl PicSimApp {
     // ------------------------------------------------------------------
     // Oberfläche
 
+    fn start_dialog(&mut self, d: FileDialog<AppDialog>) {
+        if self.file_dialog.is_none() {
+            self.file_dialog = Some(d);
+        }
+    }
+
+    /// Ergebnis eines fertigen Dateidialogs aus dem Menü Datei verarbeiten.
+    fn finish_dialog(&mut self, ctx: &egui::Context) {
+        let Some((purpose, Some(p))) = dialog::poll(&mut self.file_dialog, ctx) else { return };
+        match purpose {
+            AppDialog::Open => self.open_any(&p),
+            AppDialog::ImportIni => match Ini::load(&p) {
+                Ok(ini) => {
+                    self.apps.load(&ini);
+                    self.board.apply_ini(ini);
+                    self.save_ini();
+                    self.status = format!("Einstellungen aus {} übernommen", p.display());
+                }
+                Err(e) => self.alert = Some(format!("{}: {e}", p.display())),
+            },
+            AppDialog::ExportIni => {
+                self.board.store_ini();
+                if let Err(e) = self.board.ini.save(&p) {
+                    self.alert = Some(e.to_string());
+                }
+            }
+        }
+    }
+
     fn menu(&mut self, ui: &mut egui::Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("Datei", |ui| {
                 if ui.button("LST-Datei öffnen…").clicked() {
-                    if let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Listing", &["lst", "LST"])
-                        .pick_file()
-                    {
-                        self.open_any(&p);
-                    }
+                    let dlg = rfd::AsyncFileDialog::new().add_filter("Listing", &["lst", "LST"]);
+                    self.start_dialog(FileDialog::open(dlg, AppDialog::Open));
                 }
                 if ui.button("Quelltext öffnen…").clicked() {
-                    if let Some(p) = rfd::FileDialog::new()
-                        .add_filter("Quelltext", &["src", "SRC", "asm"])
-                        .pick_file()
-                    {
-                        self.open_any(&p);
-                    }
+                    let dlg = rfd::AsyncFileDialog::new().add_filter("Quelltext", &["src", "SRC", "asm"]);
+                    self.start_dialog(FileDialog::open(dlg, AppDialog::Open));
                 }
                 if ui
                     .add_enabled(self.lst_path.is_some(), egui::Button::new("Neu laden"))
@@ -411,32 +442,12 @@ impl PicSimApp {
                     .on_hover_text("picsimu.ini des alten Programms übernehmen")
                     .clicked()
                 {
-                    if let Some(p) = rfd::FileDialog::new()
-                        .add_filter("INI", &["ini", "INI"])
-                        .pick_file()
-                    {
-                        match Ini::load(&p) {
-                            Ok(ini) => {
-                                self.apps.load(&ini);
-                                self.board.apply_ini(ini);
-                                self.save_ini();
-                                self.status =
-                                    format!("Einstellungen aus {} übernommen", p.display());
-                            }
-                            Err(e) => self.alert = Some(format!("{}: {e}", p.display())),
-                        }
-                    }
+                    let dlg = rfd::AsyncFileDialog::new().add_filter("INI", &["ini", "INI"]);
+                    self.start_dialog(FileDialog::open(dlg, AppDialog::ImportIni));
                 }
                 if ui.button("Einstellungen exportieren…").clicked() {
-                    if let Some(p) = rfd::FileDialog::new()
-                        .set_file_name("picsimu.ini")
-                        .save_file()
-                    {
-                        self.board.store_ini();
-                        if let Err(e) = self.board.ini.save(&p) {
-                            self.alert = Some(e.to_string());
-                        }
-                    }
+                    let dlg = rfd::AsyncFileDialog::new().set_file_name("picsimu.ini");
+                    self.start_dialog(FileDialog::save(dlg, AppDialog::ExportIni));
                 }
                 ui.separator();
                 if ui.button("Beenden").clicked() {
@@ -775,6 +786,7 @@ impl PicSimApp {
 impl eframe::App for PicSimApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.finish_dialog(&ctx);
         if !self.editor.has_focus(&ctx) {
             self.shortcuts(&ctx);
         }
