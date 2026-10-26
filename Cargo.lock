@@ -2235,7 +2235,7 @@ dependencies = [
 
 [[package]]
 name = "picsim"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "dirs",
  "eframe",
@@ -2261,14 +2261,14 @@ dependencies = [
 
 [[package]]
 name = "picsim-asm"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "picsim-core",
 ]
 
 [[package]]
 name = "picsim-core"
-version = "0.7.2"
+version = "0.7.3"
 
 [[package]]
 name = "pin-project"
