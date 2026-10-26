@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.6.2
+
+- Beschriftungen in gezeichneten Bauteilen (Schalter, Taster, LCD, 7-Segment, Ampel, Getränkeautomat) bleiben scharf, egal wie groß das Fenster ist. Vorher wurde der Text klein gesetzt und dann hochgezogen und sah dadurch pixelig aus
+
 ## 0.6.1
 
 - Kopieren, Ausschneiden und Einfügen im Editor funktionieren jetzt auch mit anderen Programmen. Vorher landete kopierter Text nur in PicSims eigener Zwischenablage. Auf dem Mac geht das wie gewohnt mit Cmd+C, Cmd+X und Cmd+V
