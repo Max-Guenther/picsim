@@ -13,8 +13,11 @@ mod dialog;
 mod editor;
 mod layout;
 mod periph;
+mod project;
 mod reference;
 mod settings;
+mod theme;
+mod tiles;
 mod update;
 mod view;
 

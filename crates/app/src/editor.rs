@@ -138,11 +138,28 @@ impl Editor {
         }
     }
 
-    fn save_to(&mut self, path: &Path) -> bool {
+    /// Quelltext so, wie er in die Datei geschrieben wird.
+    pub fn file_bytes(&self) -> Vec<u8> {
         // Wie das Original: Latin-1 mit CRLF, damit alte Werkzeuge die Datei lesen
         let text = self.text.replace('\n', "\r\n");
-        let bytes: Vec<u8> = text.chars().map(|c| if (c as u32) < 256 { c as u8 } else { b'?' }).collect();
-        match std::fs::write(path, bytes) {
+        text.chars().map(|c| if (c as u32) < 256 { c as u8 } else { b'?' }).collect()
+    }
+
+    /// Ungespeicherte Änderungen in die vorhandene Datei schreiben.
+    pub fn save_if_dirty(&mut self) -> bool {
+        match self.path.clone() {
+            Some(p) if self.dirty() => self.save_to(&p),
+            _ => true,
+        }
+    }
+
+    /// Unverändert seit dem Start, also nichts, was ins Projekt müsste.
+    pub fn is_template(&self) -> bool {
+        self.path.is_none() && self.text == TEMPLATE
+    }
+
+    fn save_to(&mut self, path: &Path) -> bool {
+        match std::fs::write(path, self.file_bytes()) {
             Ok(()) => {
                 self.saved = self.text.clone();
                 self.path = Some(path.to_path_buf());
@@ -328,7 +345,11 @@ impl Editor {
                 });
                 if !self.message.is_empty() {
                     let ok = self.errors.iter().all(|e| e.warning);
-                    let col = if ok { Color32::from_rgb(20, 110, 40) } else { Color32::from_rgb(180, 20, 20) };
+                    let col = if ok {
+                        crate::theme::pick(ui, Color32::from_rgb(20, 110, 40), Color32::from_rgb(110, 210, 120))
+                    } else {
+                        crate::theme::pick(ui, Color32::from_rgb(180, 20, 20), Color32::from_rgb(255, 110, 100))
+                    };
                     ui.label(RichText::new(&self.message).color(col));
                 }
                 ui.separator();
@@ -343,7 +364,11 @@ impl Editor {
                     egui::ScrollArea::vertical().id_salt("errors").max_height(err_h - 10.0).show(ui, |ui| {
                         for e in &self.errors {
                             let kind = if e.warning { "Warnung" } else { "Fehler" };
-                            let col = if e.warning { Color32::from_rgb(160, 110, 0) } else { Color32::from_rgb(180, 20, 20) };
+                            let col = if e.warning {
+                                crate::theme::pick(ui, Color32::from_rgb(160, 110, 0), Color32::from_rgb(235, 185, 70))
+                            } else {
+                                crate::theme::pick(ui, Color32::from_rgb(180, 20, 20), Color32::from_rgb(255, 110, 100))
+                            };
                             let text = format!("{kind} in Zeile {} ({}): {}", e.src_line, e.file, e.msg);
                             let label = egui::Label::new(RichText::new(text).color(col)).sense(egui::Sense::click());
                             if ui.add(label).on_hover_text("Klicken springt zur Zeile").clicked() {
@@ -382,7 +407,8 @@ impl Editor {
                 ui.add(egui::Label::new(gutter).selectable(false));
 
                 let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _wrap: f32| {
-                    let job = highlight(buf.as_str(), &errors, &font, tab);
+                    let pal = if ui.visuals().dark_mode { &DARK } else { &LIGHT };
+                    let job = highlight(buf.as_str(), &errors, &font, tab, pal);
                     ui.ctx().fonts_mut(|f| f.layout_job(job))
                 };
                 ui.add(
@@ -482,13 +508,35 @@ impl Editor {
 // ----------------------------------------------------------------------
 // Syntax-Hervorhebung
 
-const COMMENT: Color32 = Color32::from_rgb(100, 130, 100);
-const LABEL: Color32 = Color32::from_rgb(150, 40, 40);
-const MNEMONIC: Color32 = Color32::from_rgb(20, 60, 180);
-const DIRECTIVE: Color32 = Color32::from_rgb(130, 40, 150);
-const NUMBER: Color32 = Color32::from_rgb(190, 100, 0);
-const TEXT: Color32 = Color32::from_rgb(30, 30, 30);
-const ERROR_BG: Color32 = Color32::from_rgb(255, 215, 215);
+struct Palette {
+    comment: Color32,
+    label: Color32,
+    mnemonic: Color32,
+    directive: Color32,
+    number: Color32,
+    text: Color32,
+    error_bg: Color32,
+}
+
+const LIGHT: Palette = Palette {
+    comment: Color32::from_rgb(100, 130, 100),
+    label: Color32::from_rgb(150, 40, 40),
+    mnemonic: Color32::from_rgb(20, 60, 180),
+    directive: Color32::from_rgb(130, 40, 150),
+    number: Color32::from_rgb(190, 100, 0),
+    text: Color32::from_rgb(30, 30, 30),
+    error_bg: Color32::from_rgb(255, 215, 215),
+};
+
+const DARK: Palette = Palette {
+    comment: Color32::from_rgb(120, 165, 120),
+    label: Color32::from_rgb(235, 125, 110),
+    mnemonic: Color32::from_rgb(110, 165, 255),
+    directive: Color32::from_rgb(205, 135, 235),
+    number: Color32::from_rgb(240, 170, 80),
+    text: Color32::from_rgb(220, 220, 220),
+    error_bg: Color32::from_rgb(95, 35, 35),
+};
 
 const PUNCT: &str = ",()+-";
 
@@ -510,11 +558,11 @@ fn append(job: &mut LayoutJob, text: &str, fmt: &TextFormat, col: &mut usize, ta
     }
 }
 
-fn highlight(text: &str, error_lines: &HashSet<usize>, font: &FontId, tab: usize) -> LayoutJob {
+fn highlight(text: &str, error_lines: &HashSet<usize>, font: &FontId, tab: usize, pal: &Palette) -> LayoutJob {
     let mut job = LayoutJob::default();
     job.wrap.max_width = f32::INFINITY;
     for (i, line) in text.split_inclusive('\n').enumerate() {
-        let bg = if error_lines.contains(&(i + 1)) { ERROR_BG } else { Color32::TRANSPARENT };
+        let bg = if error_lines.contains(&(i + 1)) { pal.error_bg } else { Color32::TRANSPARENT };
         let fmt = |color: Color32| TextFormat { font_id: font.clone(), color, background: bg, ..Default::default() };
         let (code, comment) = match line.find(';') {
             Some(p) => line.split_at(p),
@@ -532,24 +580,24 @@ fn highlight(text: &str, error_lines: &HashSet<usize>, font: &FontId, tab: usize
             let (tok, tail) = rest.split_at(len);
             let word = !c.is_whitespace() && !PUNCT.contains(c);
             let color = if !word {
-                TEXT
+                pal.text
             } else if first && line.starts_with(tok) {
-                LABEL
+                pal.label
             } else if picsim_asm::is_mnemonic(tok) {
-                MNEMONIC
+                pal.mnemonic
             } else if picsim_asm::is_directive(tok) {
-                DIRECTIVE
+                pal.directive
             } else if tok.starts_with(|c: char| c.is_ascii_digit() || c == '\'' || c == '$') {
-                NUMBER
+                pal.number
             } else {
-                TEXT
+                pal.text
             };
             first &= !word;
             append(&mut job, tok, &fmt(color), &mut col, tab);
             rest = tail;
         }
         if !comment.is_empty() {
-            append(&mut job, comment, &fmt(COMMENT), &mut col, tab);
+            append(&mut job, comment, &fmt(pal.comment), &mut col, tab);
         }
     }
     job
@@ -562,20 +610,20 @@ mod tests {
     #[test]
     fn highlight_keeps_text() {
         let src = "loop\tbsf STATUS,5 ; Kommentar\n\tgoto loop\n";
-        let job = highlight(src, &HashSet::new(), &FontId::monospace(14.0), 8);
+        let job = highlight(src, &HashSet::new(), &FontId::monospace(14.0), 8, &LIGHT);
         assert_eq!(job.text, src);
         let colors: Vec<_> = job.sections.iter().map(|s| (&job.text[s.byte_range.start.0..s.byte_range.end.0], s.format.color)).collect();
-        assert!(colors.contains(&("loop", LABEL)));
-        assert!(colors.contains(&("bsf", MNEMONIC)));
-        assert!(colors.contains(&("5", NUMBER)));
-        assert!(colors.contains(&("goto", MNEMONIC)));
-        assert!(colors.contains(&("; Kommentar\n", COMMENT)));
+        assert!(colors.contains(&("loop", LIGHT.label)));
+        assert!(colors.contains(&("bsf", LIGHT.mnemonic)));
+        assert!(colors.contains(&("5", LIGHT.number)));
+        assert!(colors.contains(&("goto", LIGHT.mnemonic)));
+        assert!(colors.contains(&("; Kommentar\n", LIGHT.comment)));
     }
 
     #[test]
     fn tabs_reach_next_stop() {
         // "status" und "porta" sind verschieden lang, "equ" steht trotzdem in Spalte 8
-        let job = highlight("status\tequ\t3\nporta\tequ\t5\n\t; a\tb\n", &HashSet::new(), &FontId::monospace(14.0), 8);
+        let job = highlight("status\tequ\t3\nporta\tequ\t5\n\t; a\tb\n", &HashSet::new(), &FontId::monospace(14.0), 8, &LIGHT);
         let tabs: Vec<_> = job
             .sections
             .iter()

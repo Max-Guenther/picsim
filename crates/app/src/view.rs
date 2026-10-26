@@ -4,8 +4,13 @@ use crate::app::PicSimApp;
 use eframe::egui::{self, Color32, RichText, Sense};
 use picsim_core::cpu::{INTCON, OPTION, STATUS};
 
-const CHANGED: Color32 = Color32::from_rgb(200, 30, 30);
-const CURRENT_LINE: Color32 = Color32::from_rgb(150, 220, 160);
+fn changed(ui: &egui::Ui) -> Color32 {
+    crate::theme::pick(ui, Color32::from_rgb(200, 30, 30), Color32::from_rgb(255, 100, 90))
+}
+
+fn current_line(ui: &egui::Ui) -> Color32 {
+    crate::theme::pick(ui, Color32::from_rgb(150, 220, 160), Color32::from_rgb(40, 95, 55))
+}
 const BREAKPOINT: Color32 = Color32::from_rgb(210, 40, 40);
 
 /// Fenster "Datenspeicher".
@@ -91,7 +96,7 @@ fn ram_cell(app: &mut PicSimApp, ui: &mut egui::Ui, addr: u8) {
     if !implemented {
         t = t.weak();
     } else if v != app.prev_ram[addr as usize] {
-        t = t.color(CHANGED).strong();
+        t = t.color(changed(ui)).strong();
     }
     let r = ui.add(egui::Label::new(t).sense(Sense::click()));
     if r.clicked() && implemented {
@@ -171,7 +176,7 @@ fn sfr_content(app: &mut PicSimApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.checkbox(&mut app.board.cpu.wdt_enabled, "WDT aktiv");
         if app.board.cpu.sleeping {
-            ui.label(RichText::new("SLEEP").color(Color32::DARK_BLUE).strong());
+            ui.label(RichText::new("SLEEP").color(crate::theme::pick(ui, Color32::DARK_BLUE, Color32::LIGHT_BLUE)).strong());
         }
     });
     ui.add_space(4.0);
@@ -264,7 +269,7 @@ pub fn listing(app: &mut PicSimApp, ui: &mut egui::Ui) {
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(width, row_h), Sense::click());
             let painter = ui.painter_at(rect);
             if Some(i) == current {
-                painter.rect_filled(rect, 0.0, CURRENT_LINE);
+                painter.rect_filled(rect, 0.0, current_line(ui));
             }
             let in_gutter = |p: Option<egui::Pos2>| p.is_some_and(|p| p.x < rect.left() + 20.0);
             let bp_center = rect.left_center() + egui::vec2(9.0, 0.0);

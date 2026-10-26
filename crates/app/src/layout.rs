@@ -4,6 +4,7 @@
 //! Die Lage jedes Fensters wird als Anteil der Fläche gespeichert. Ändert
 //! sich die Größe des Programmfensters, werden alle Fenster anteilig
 //! mitskaliert, statt am Rand übereinandergeschoben zu werden.
+//! Den festen Modus (Kacheln mit Trennern) regelt `tiles`.
 
 use eframe::egui::{self, vec2, Rect, Vec2};
 use picsim_core::Ini;
@@ -52,6 +53,10 @@ pub struct Layout {
     /// Bilder seit dem letzten Neuaufbau. Neue egui-Fenster melden in den
     /// ersten Bildern noch vorläufige Größen, die dürfen nicht gespeichert werden.
     frames: u32,
+    /// Aufteilung im festen Modus.
+    pub fixed: crate::tiles::Split,
+    /// Trenner aus dem letzten Bild (Lage auf dem Bildschirm).
+    pub grips: Vec<crate::tiles::Handle>,
 }
 
 impl Default for Layout {
@@ -70,6 +75,8 @@ impl Default for Layout {
             area: None,
             pending: None,
             frames: 0,
+            fixed: crate::tiles::default_tree(),
+            grips: Vec::new(),
         }
     }
 }
@@ -91,6 +98,7 @@ impl Layout {
                 l.frac[i] = f;
             }
         }
+        l.fixed.load(ini);
         l
     }
 
@@ -103,6 +111,7 @@ impl Layout {
             let [x, y, w, h] = self.frac[i];
             ini.set(SEC, &format!("{key}_lage"), format!("{x:.4};{y:.4};{w:.4};{h:.4}"));
         }
+        self.fixed.store(ini);
     }
 
     pub fn is_free(&self) -> bool {
@@ -130,9 +139,10 @@ impl Layout {
             self.visible = [true; N];
             changed = true;
         }
-        if self.is_free() && ui.button("Layout zurücksetzen").on_hover_text("Alle Fenster wieder an ihren Standardplatz").clicked() {
+        if ui.button("Layout zurücksetzen").on_hover_text("Alle Bereiche wieder an ihren Standardplatz und in Standardgröße").clicked() {
             self.visible = [true; N];
             self.frac = WINDOWS.map(|w| w.2);
+            self.fixed = crate::tiles::default_tree();
             self.rebuild();
             changed = true;
         }
@@ -196,16 +206,6 @@ impl Layout {
             .resizable(true)
             .collapsible(true)
             .min_size([60.0, 40.0])
-    }
-
-    /// Feste Kachel für Bereich i im festen Modus (Standardlage).
-    pub fn tile(i: usize, area: Rect) -> Rect {
-        let [x, y, w, h] = WINDOWS[i].2;
-        Rect::from_min_size(
-            area.min + vec2(x * area.width(), y * area.height()),
-            vec2(w * area.width(), h * area.height()),
-        )
-        .shrink(GAP / 2.0)
     }
 
     /// Nach dem Zeichnen: aktuelle Lage eines Fensters merken.

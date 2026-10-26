@@ -1,7 +1,11 @@
 # Änderungen
 
-## 0.6.3
+## 0.7.0
 
+- Projektdateien: Datei > Projekt speichern legt alles in eine `.picsim`-Datei, die du weitergeben kannst. Darin stecken Quelltext samt INCLUDE-Dateien, alle Einstellungen (Pins, Schalternamen, LED-Farben, Applikationen, Tempo, Tabbreite), das Layout mit allen Größen, die Schalterstellungen und die Haltepunkte. Wer die Datei mit Datei > Projekt öffnen lädt, hat alles genauso und das Programm ist gleich übersetzt und geladen. Eigene Dateipfade, Zoom, Darstellung und Update-Einstellung bleiben dabei beim Empfänger, wie sie sind
+- Solange ein Projekt offen ist, aktualisiert Speichern im Editor auch die Projektdatei
+- Fester Modus: Die Anordnung bleibt vorgegeben, aber die Trenner zwischen den Bereichen lassen sich mit der Maus ziehen. Die Größen bleiben beim nächsten Start erhalten. Ausgeblendete Bereiche geben ihren Platz an die Nachbarn ab, statt eine Lücke zu lassen. Ansicht > Layout zurücksetzen stellt die Standardgrößen wieder her
+- Dark Mode: Einstellungen > Darstellung mit "Wie System" (Standard), "Hell" und "Dunkel". Editor, Listing und Nachschlagefenster haben passende dunkle Farben
 - Absturz auf dem Mac behoben: Bewegte man im Fenster "Speichern unter" oder "Öffnen" das Trackpad oder die Maus auf bestimmte Weise, beendete sich PicSim sofort. Alle Dateidialoge laufen jetzt, ohne das Programm anzuhalten, auf dem Mac als Fenster, das am PicSim-Fenster hängt
 
 ## 0.6.2

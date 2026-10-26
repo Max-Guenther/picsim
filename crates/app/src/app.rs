@@ -4,6 +4,7 @@ use crate::apps::Apps;
 use crate::dialog::{self, FileDialog};
 use crate::editor::{Editor, EditorAction};
 use crate::layout::Layout;
+use crate::project::{self, Project};
 use crate::reference::{Reference, Tab};
 use crate::settings::Dialogs;
 use crate::update::{UpdateState, Updater};
@@ -39,6 +40,8 @@ pub struct PicSimApp {
     pub board: Board,
     pub lst_path: Option<PathBuf>,
     ini_path: PathBuf,
+    /// Hier liegen die Arbeitsordner geöffneter Projekte.
+    cache_dir: PathBuf,
     pub status: String,
     alert: Option<String>,
     /// Tempo bei Go, Step over und Step out.
@@ -62,38 +65,40 @@ pub struct PicSimApp {
     pub auto_update: bool,
     zoom: f32,
     file_dialog: Option<FileDialog<AppDialog>>,
+    /// Geöffnete oder zuletzt gespeicherte Projektdatei.
+    project: Option<PathBuf>,
+    theme: egui::ThemePreference,
 }
 
 /// Wofür der Dateidialog im Menü Datei geöffnet wurde.
 enum AppDialog {
     Open,
+    SaveProject,
     ImportIni,
     ExportIni,
 }
 
 impl PicSimApp {
     pub fn new(cc: &eframe::CreationContext<'_>, arg: Option<String>) -> Self {
-        cc.egui_ctx.set_theme(egui::ThemePreference::Light);
+        let cache = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("picsim");
+        Self::with_dirs(cc, arg, config_dir(), cache)
+    }
+
+    /// Wie `new`, mit eigenem Ordner für die ini und den Cache (für Tests).
+    fn with_dirs(cc: &eframe::CreationContext<'_>, arg: Option<String>, config: PathBuf, cache_dir: PathBuf) -> Self {
         crate::editor::install_tab_fonts(&cc.egui_ctx);
-        let ini_path = config_dir().join("picsimu.ini");
+        let ini_path = config.join("picsimu.ini");
         let ini = Ini::load(&ini_path).unwrap_or_else(|_| Ini::parse(DEFAULT_INI));
+        let theme = crate::theme::from_ini(&ini);
+        cc.egui_ctx.set_theme(theme);
         let auto_update = ini.get("UPDATE", "AUTO").map(|v| v != "0").unwrap_or(true);
         let zoom = ini.number("DISPLAY", "ZOOM").unwrap_or(1.0) as f32;
-        let speed = match ini.get("SETTINGS", "TEMPO") {
-            Some("Echtzeit") => Speed::Echtzeit,
-            Some("Langsam") => Speed::Langsam,
-            Some(_) => Speed::Maximal,
-            None if ini.flag("SETTINGS", "ECHTZEIT") => Speed::Echtzeit,
-            None => Speed::Maximal,
-        };
-        let slow_ips = ini
-            .number("SETTINGS", "LANGSAM")
-            .unwrap_or(10.0)
-            .clamp(0.5, 1000.0);
+        let (speed, slow_ips) = speed_from_ini(&ini);
         let mut app = PicSimApp {
             board: Board::new(ini),
             lst_path: None,
             ini_path,
+            cache_dir,
             status: "Bereit".into(),
             alert: None,
             speed,
@@ -114,11 +119,13 @@ impl PicSimApp {
             auto_update,
             zoom,
             file_dialog: None,
+            project: None,
+            theme,
         };
         cc.egui_ctx.set_zoom_factor(zoom);
-        if let Some(n) = app.board.ini.number("EDITOR", "TABBREITE") {
-            app.editor.tab_width = (n as usize).clamp(2, crate::editor::MAX_TAB);
-        }
+        app.load_tab_width();
+        // Zuletzt benutztes Projekt bleibt zugeordnet, die Einstellungen stehen schon in der ini
+        app.project = app.board.ini.get("FILES", "PROJEKT").map(PathBuf::from).filter(|p| p.exists());
         app.apps.load(&app.board.ini);
         app.layout = Layout::load(&app.board.ini);
         app.reference.open = app.board.ini.flag("Applikationen", "Nachschlagen");
@@ -165,11 +172,16 @@ impl PicSimApp {
         ini.set("SETTINGS", "TEMPO", self.speed.name());
         ini.set("SETTINGS", "LANGSAM", format!("{}", self.slow_ips));
         ini.set("EDITOR", "TABBREITE", self.editor.tab_width.to_string());
+        crate::theme::store(ini, self.theme);
         if let Some(p) = &self.lst_path {
             ini.set("FILES", "NAME", p.to_string_lossy());
         }
         if let Some(p) = &self.editor.path {
             ini.set("FILES", "SOURCE", p.to_string_lossy());
+        }
+        match &self.project {
+            Some(p) => ini.set("FILES", "PROJEKT", p.to_string_lossy()),
+            None => ini.set("FILES", "PROJEKT", ""),
         }
         if let Err(e) = ini.save(&self.ini_path) {
             self.status = format!("Einstellungen nicht gespeichert: {e}");
@@ -182,7 +194,9 @@ impl PicSimApp {
             .extension()
             .map(|e| e.to_string_lossy().to_ascii_lowercase())
             .unwrap_or_default();
-        if ext == "src" || ext == "asm" {
+        if ext == project::EXT {
+            self.open_project(path);
+        } else if ext == "src" || ext == "asm" {
             self.editor.load(path);
             self.editor.open = true;
             if let Some(EditorAction::Loaded(lst)) = self.editor.assemble() {
@@ -214,6 +228,103 @@ impl PicSimApp {
             }
             Err(e) => self.alert = Some(format!("{} lässt sich nicht öffnen: {e}", path.display())),
         }
+    }
+
+    fn load_tab_width(&mut self) {
+        if let Some(n) = self.board.ini.number("EDITOR", "TABBREITE") {
+            self.editor.tab_width = (n as usize).clamp(2, crate::editor::MAX_TAB);
+        }
+    }
+
+    /// Projekt öffnen: Dateien in den Arbeitsordner, Einstellungen
+    /// übernehmen, Quelltext übersetzen und laden.
+    pub fn open_project(&mut self, path: &Path) {
+        let p = match Project::read(path) {
+            Ok(p) => p,
+            Err(e) => {
+                self.alert = Some(format!("Projekt lässt sich nicht öffnen: {e}"));
+                return;
+            }
+        };
+        let work = project::workdir(path, &self.cache_dir);
+        if let Err(e) = p.extract(&work) {
+            self.alert = Some(format!("Projekt lässt sich nicht entpacken nach {}: {e}", work.display()));
+            return;
+        }
+        let ini = p.settings(&self.board.ini);
+        self.apps.load(&ini);
+        self.layout = Layout::load(&ini);
+        (self.speed, self.slow_ips) = speed_from_ini(&ini);
+        self.board.apply_ini(ini);
+        self.load_tab_width();
+        if let Some(s) = p.ini.get(project::STATE, "Schalter") {
+            let mut pos = self.board.switch_pos;
+            project::switches_from_text(s, &mut pos);
+            for (i, &v) in pos.iter().enumerate() {
+                self.board.set_switch(i, v);
+            }
+        }
+        self.project = Some(path.to_path_buf());
+        if let Some(src) = p.source() {
+            self.editor.load(&work.join(src));
+            self.editor.open = true;
+            if let Some(EditorAction::Loaded(lst)) = self.editor.assemble() {
+                self.open_lst(&lst);
+            }
+        } else if let Some(lst) = p.listing() {
+            self.open_lst(&work.join(lst));
+        }
+        if let Some(bp) = p.ini.get(project::STATE, "Haltepunkte") {
+            self.board.breakpoints = project::breakpoints_from_text(bp);
+        }
+        self.status = format!("Projekt {} geöffnet", path.display());
+        self.save_ini();
+    }
+
+    /// Alles, was zum Projekt gehört, in `path` schreiben.
+    fn save_project(&mut self, path: &Path) {
+        if !self.editor.save_if_dirty() {
+            self.alert = Some("Der Quelltext ließ sich nicht speichern, das Projekt wurde nicht geschrieben.".into());
+            return;
+        }
+        self.save_ini();
+        let mut p = Project::new(&self.board.ini);
+        let added = if let Some(src) = self.editor.path.clone() {
+            let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "programm.src".into());
+            p.add_source(&name, self.editor.file_bytes(), src.parent())
+        } else if !self.editor.is_template() {
+            p.add_source("programm.src", self.editor.file_bytes(), None)
+        } else if let Some(lst) = self.lst_path.clone() {
+            p.add_listing(&lst).map_err(|e| format!("{}: {e}", lst.display()))
+        } else {
+            Ok(())
+        };
+        if let Err(e) = added {
+            self.alert = Some(e);
+            return;
+        }
+        p.ini.set(project::STATE, "Schalter", project::switches_to_text(&self.board.switch_pos));
+        p.ini.set(project::STATE, "Haltepunkte", project::breakpoints_to_text(&self.board.breakpoints));
+        match p.write(path) {
+            Ok(()) => {
+                self.project = Some(path.to_path_buf());
+                self.status = format!("Projekt {} gespeichert", path.display());
+                self.save_ini();
+            }
+            Err(e) => self.alert = Some(format!("Projekt nicht gespeichert: {e}")),
+        }
+    }
+
+    fn save_project_as(&mut self) {
+        let name = self
+            .project
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .or_else(|| self.editor.path.as_ref().and_then(|p| p.file_stem()).map(|s| format!("{}.{}", s.to_string_lossy(), project::EXT)))
+            .unwrap_or_else(|| format!("projekt.{}", project::EXT));
+        let dlg = rfd::AsyncFileDialog::new().add_filter("PicSim-Projekt", &[project::EXT]).set_file_name(name);
+        self.start_dialog(FileDialog::save(dlg, AppDialog::SaveProject));
     }
 
     fn reload_lst(&mut self) {
@@ -398,9 +509,21 @@ impl PicSimApp {
 
     /// Ergebnis eines fertigen Dateidialogs aus dem Menü Datei verarbeiten.
     fn finish_dialog(&mut self, ctx: &egui::Context) {
-        let Some((purpose, Some(p))) = dialog::poll(&mut self.file_dialog, ctx) else { return };
+        let Some((purpose, Some(mut p))) = dialog::poll(&mut self.file_dialog, ctx) else { return };
         match purpose {
-            AppDialog::Open => self.open_any(&p),
+            AppDialog::Open => {
+                // Einzelne Datei statt Projekt: das Projekt ist dann nicht mehr offen
+                if p.extension().is_none_or(|e| e != project::EXT) {
+                    self.project = None;
+                }
+                self.open_any(&p)
+            }
+            AppDialog::SaveProject => {
+                if p.extension().is_none() {
+                    p.set_extension(project::EXT);
+                }
+                self.save_project(&p);
+            }
             AppDialog::ImportIni => match Ini::load(&p) {
                 Ok(ini) => {
                     self.apps.load(&ini);
@@ -422,6 +545,23 @@ impl PicSimApp {
     fn menu(&mut self, ui: &mut egui::Ui) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("Datei", |ui| {
+                if ui.button("Projekt öffnen…").clicked() {
+                    let dlg = rfd::AsyncFileDialog::new().add_filter("PicSim-Projekt", &[project::EXT]);
+                    self.start_dialog(FileDialog::open(dlg, AppDialog::Open));
+                }
+                let save = ui.button("Projekt speichern").on_hover_text(
+                    "Quelltext, Einstellungen, Layout, Schalter und Haltepunkte in eine Datei, die du weitergeben kannst",
+                );
+                if save.clicked() {
+                    match self.project.clone() {
+                        Some(p) => self.save_project(&p),
+                        None => self.save_project_as(),
+                    }
+                }
+                if ui.button("Projekt speichern unter…").clicked() {
+                    self.save_project_as();
+                }
+                ui.separator();
                 if ui.button("LST-Datei öffnen…").clicked() {
                     let dlg = rfd::AsyncFileDialog::new().add_filter("Listing", &["lst", "LST"]);
                     self.start_dialog(FileDialog::open(dlg, AppDialog::Open));
@@ -489,6 +629,11 @@ impl PicSimApp {
                     .changed()
                 {
                     self.layout.set_free(free);
+                    self.save_ini();
+                }
+                ui.separator();
+                if crate::theme::menu(ui, &mut self.theme) {
+                    ui.ctx().set_theme(self.theme);
                     self.save_ini();
                 }
             });
@@ -571,7 +716,7 @@ impl PicSimApp {
                     }
                 }
                 UpdateState::Failed(e) => {
-                    ui.colored_label(egui::Color32::DARK_RED, format!("Update: {e}"));
+                    ui.colored_label(crate::theme::pick(ui, egui::Color32::DARK_RED, egui::Color32::LIGHT_RED), format!("Update: {e}"));
                     if ui.button("OK").clicked() {
                         self.updater.state = UpdateState::Idle;
                     }
@@ -675,14 +820,14 @@ impl PicSimApp {
         }
     }
 
-    /// Fester Modus: alle Bereiche als Kacheln an ihrem Standardplatz.
+    /// Fester Modus: alle Bereiche als Kacheln in vorgegebener Anordnung,
+    /// die Trenner dazwischen lassen sich ziehen.
     fn fixed_tiles(&mut self, ui: &mut egui::Ui) {
         let area = ui.max_rect();
-        for i in 0..crate::layout::N {
-            if !self.layout.visible[i] {
-                continue;
-            }
-            let rect = Layout::tile(i, area);
+        let (mut tiles, mut handles) = (Vec::new(), Vec::new());
+        self.layout.fixed.arrange(area, &self.layout.visible, &mut tiles, &mut handles);
+        for (i, rect) in tiles {
+            let rect = rect.shrink(2.0);
             let mut tile = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt(("kachel", i)));
             tile.set_clip_rect(rect.intersect(ui.clip_rect()));
             egui::Frame::group(tile.style()).show(&mut tile, |ui| {
@@ -691,6 +836,30 @@ impl PicSimApp {
                 self.window_content(i, ui);
             });
         }
+        // Trenner zuletzt, damit sie über dem Rand der Kacheln liegen
+        let mut stopped = false;
+        for h in &handles {
+            let r = ui.interact(h.rect, egui::Id::unique(("trenner", h.key, h.a)), egui::Sense::drag());
+            if r.hovered() || r.dragged() {
+                let icon = if h.row { egui::CursorIcon::ResizeHorizontal } else { egui::CursorIcon::ResizeVertical };
+                ui.ctx().set_cursor_icon(icon);
+                let line = if h.row {
+                    [h.rect.center_top(), h.rect.center_bottom()]
+                } else {
+                    [h.rect.left_center(), h.rect.right_center()]
+                };
+                ui.painter().line_segment(line, egui::Stroke::new(3.0, ui.visuals().selection.bg_fill));
+            }
+            if r.dragged() {
+                let d = r.drag_delta();
+                self.layout.fixed.drag(h, if h.row { d.x } else { d.y });
+            }
+            stopped |= r.drag_stopped();
+        }
+        if stopped {
+            self.save_ini();
+        }
+        self.layout.grips = handles;
     }
 
     /// Beim ersten Start fragen, wie die Bereiche angeordnet sein sollen.
@@ -760,6 +929,11 @@ impl PicSimApp {
                 .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "keine Datei geladen".into());
+            if let Some(p) = &self.project {
+                let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                ui.label(egui::RichText::new(format!("Projekt: {name}")).small()).on_hover_text(p.display().to_string());
+                ui.separator();
+            }
             ui.label(egui::RichText::new(format!("Datei: {file}")).small());
             ui.separator();
             ui.label(egui::RichText::new(&self.status).small());
@@ -806,7 +980,13 @@ impl eframe::App for PicSimApp {
         if let Some(action) = self.editor.show(&ctx) {
             match action {
                 EditorAction::Loaded(lst) => self.open_lst(&lst),
-                EditorAction::Saved => self.save_ini(),
+                EditorAction::Saved => match self.project.clone() {
+                    // Speichern des Projekt-Quelltexts aktualisiert auch das Projekt
+                    Some(p) if self.editor.path.as_ref().is_some_and(|e| e.starts_with(project::workdir(&p, &self.cache_dir))) => {
+                        self.save_project(&p)
+                    }
+                    _ => self.save_ini(),
+                },
                 EditorAction::ShowReference => {
                     self.reference.open = true;
                     self.reference.tab = Tab::Befehle;
@@ -875,8 +1055,146 @@ fn fmt_runtime(us: f64) -> String {
     }
 }
 
+fn speed_from_ini(ini: &Ini) -> (Speed, f64) {
+    let speed = match ini.get("SETTINGS", "TEMPO") {
+        Some("Echtzeit") => Speed::Echtzeit,
+        Some("Langsam") => Speed::Langsam,
+        Some(_) => Speed::Maximal,
+        None if ini.flag("SETTINGS", "ECHTZEIT") => Speed::Echtzeit,
+        None => Speed::Maximal,
+    };
+    let slow_ips = ini.number("SETTINGS", "LANGSAM").unwrap_or(10.0).clamp(0.5, 1000.0);
+    (speed, slow_ips)
+}
+
 fn config_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("picsim")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use picsim_core::SwitchPos;
+
+    /// App wie auf einem eigenen Rechner: eigene ini, eigener Cache, kein Update-Check.
+    fn machine(root: &Path, name: &str) -> PicSimApp {
+        machine_ctx(root, name, &egui::Context::default())
+    }
+
+    fn machine_ctx(root: &Path, name: &str, ctx: &egui::Context) -> PicSimApp {
+        let config = root.join(name).join("config");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(config.join("picsimu.ini"), "[UPDATE]\nAUTO=0\n").unwrap();
+        let cc = eframe::CreationContext::_new_kittest(ctx.clone());
+        PicSimApp::with_dirs(&cc, None, config, root.join(name).join("cache"))
+    }
+
+    /// Ein Bild der ganzen App mit den gegebenen Eingaben zeichnen.
+    fn frame(ctx: &egui::Context, app: &mut PicSimApp, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 1000.0))),
+            events,
+            ..Default::default()
+        };
+        let mut f = eframe::Frame::_new_kittest();
+        let mut out = ctx.run_ui(input, |ui| eframe::App::ui(app, ui, &mut f));
+        out.textures_delta.clear();
+    }
+
+    #[test]
+    fn dragging_a_divider_with_the_mouse_resizes_tiles() {
+        use egui::{Event, PointerButton};
+        let root = std::env::temp_dir().join(format!("picsim-drag-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ctx = egui::Context::default();
+        let mut app = machine_ctx(&root, "a", &ctx);
+        app.layout.set_free(false);
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, vec![]);
+
+        let grip = app.layout.grips.iter().find(|h| h.key == "spalten" && h.a == 0).expect("Trenner gezeichnet");
+        let start = grip.rect.center();
+        let before = app.layout.fixed.sizes.clone();
+        let button = |pos, pressed| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&ctx, &mut app, vec![Event::PointerMoved(start)]);
+        frame(&ctx, &mut app, vec![button(start, true)]);
+        for step in 1..=10 {
+            frame(&ctx, &mut app, vec![Event::PointerMoved(start + egui::vec2(step as f32 * 15.0, 0.0))]);
+        }
+        let end = start + egui::vec2(150.0, 0.0);
+        frame(&ctx, &mut app, vec![button(end, false)]);
+        frame(&ctx, &mut app, vec![]);
+
+        let after = &app.layout.fixed.sizes;
+        assert!(after[0] > before[0] + 0.05, "linke Spalte breiter: {before:?} -> {after:?}");
+        assert!((after[2] - before[2]).abs() < 1e-6, "Steuerpult unverändert");
+        let moved = app.layout.grips.iter().find(|h| h.key == "spalten" && h.a == 0).unwrap().rect.center();
+        assert!((moved.x - end.x).abs() < 3.0, "Trenner folgt der Maus: {} statt {}", moved.x, end.x);
+        // Beim Loslassen gespeichert
+        let ini = Ini::load(&app.ini_path).unwrap();
+        assert!(ini.get("FENSTER", "fest_spalten").is_some());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn project_runs_the_same_on_another_machine() {
+        let root = std::env::temp_dir().join(format!("picsim-e2e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let src_dir = root.join("quellen");
+        std::fs::create_dir_all(src_dir.join("inc")).unwrap();
+        std::fs::write(src_dir.join("inc/regs.inc"), "status\tequ\t3\nportb\tequ\t6\n").unwrap();
+        let src = "\tinclude \"inc/regs.inc\"\n\torg\t0\nloop\n\tincf\tportb,f\n\tgoto\tloop\n\tend\n";
+        std::fs::write(src_dir.join("blink.src"), src).unwrap();
+
+        // Rechner A: Quelltext laden, einiges einstellen, als Projekt speichern
+        let mut a = machine(&root, "a");
+        a.open_any(&src_dir.join("blink.src"));
+        assert!(a.lst_path.is_some(), "Quelltext übersetzt und geladen");
+        a.board.set_switch(0, SwitchPos::High);
+        a.board.set_switch(5, SwitchPos::Low);
+        a.board.switch_names[0] = "Start".into();
+        a.board.breakpoints.insert(1);
+        a.editor.tab_width = 12;
+        a.layout.set_free(false);
+        a.layout.fixed.sizes = vec![0.3, 0.57, 0.13];
+        a.speed = Speed::Langsam;
+        a.slow_ips = 25.0;
+        let file = root.join("blink.picsim");
+        a.save_project(&file);
+        assert_eq!(a.alert, None);
+        assert!(file.exists());
+
+        // Rechner B: frische Installation, nur die Projektdatei
+        let mut b = machine(&root, "b");
+        b.open_project(&file);
+        assert_eq!(b.alert, None);
+        assert_eq!(b.editor.text, src, "Quelltext gleich");
+        assert!(!b.editor.dirty());
+        let lst = b.lst_path.clone().expect("Listing geladen");
+        assert!(lst.starts_with(root.join("b/cache")), "Ausgaben landen im Arbeitsordner, nicht beim Absender");
+        assert_eq!(b.board.listing.program(), a.board.listing.program(), "gleiches Programm");
+        assert_eq!(b.board.switch_pos[0], SwitchPos::High);
+        assert_eq!(b.board.switch_pos[5], SwitchPos::Low);
+        assert_eq!(b.board.switch_names[0], "Start");
+        assert!(b.board.breakpoints.contains(&1));
+        assert_eq!(b.editor.tab_width, 12);
+        assert!(!b.layout.is_free());
+        assert!((b.layout.fixed.sizes[0] - 0.3).abs() < 1e-3);
+        assert!(matches!(b.speed, Speed::Langsam));
+        assert!((b.slow_ips - 25.0).abs() < 1e-9);
+        assert_eq!(b.board.ini.get("UPDATE", "AUTO"), Some("0"), "eigene Update-Einstellung bleibt");
+        assert_eq!(b.project.as_deref(), Some(file.as_path()));
+
+        // B ändert den Quelltext und speichert im Editor: das Projekt wird aktualisiert
+        b.editor.text = src.replace("incf", "decf");
+        assert!(b.editor.save_if_dirty());
+        let p = b.project.clone().unwrap();
+        b.save_project(&p);
+        let mut c = machine(&root, "c");
+        c.open_project(&file);
+        assert!(c.editor.text.contains("decf"));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 }

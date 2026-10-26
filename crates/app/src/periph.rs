@@ -503,14 +503,11 @@ pub fn leds(app: &mut PicSimApp, ui: &mut egui::Ui) {
 }
 
 pub fn stepper(app: &mut PicSimApp, ui: &mut egui::Ui) {
+    let ring = crate::theme::pick(ui, Color32::from_rgb(30, 30, 40), Color32::from_rgb(150, 150, 165));
     let c = Canvas::new(ui, vec2(90.0, 104.0), Sense::click(), 0.0);
     let p = &c.painter;
     let center = c.rect.min + vec2(45.0, 45.0);
-    p.circle_stroke(
-        center,
-        34.0,
-        Stroke::new(6.0, Color32::from_rgb(30, 30, 40)),
-    );
+    p.circle_stroke(center, 34.0, Stroke::new(6.0, ring));
     let pins = app.board.cpu.pins();
     for (i, pin) in app.board.stepper.pins.iter().enumerate() {
         let active = picsim_core::devices::level(&pins, *pin) == Some(true);

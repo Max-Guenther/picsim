@@ -31,6 +31,7 @@ Unter Ubuntu braucht das die Pakete `libgtk-3-dev libxkbcommon-dev libwayland-de
 picsim                 # zuletzt geöffnete Datei
 picsim programm.src    # Quelltext im Editor öffnen, assemblieren und laden
 picsim programm        # wie im Original: .lst wird ergänzt
+picsim projekt.picsim  # Projekt öffnen
 ```
 
 1. **Quelltext bearbeiten** öffnet den Editor.
@@ -47,6 +48,18 @@ picsim programm        # wie im Original: .lst wird ergänzt
 | F10 | Go: bis zum Breakpoint, nochmal drücken hält an |
 
 Breakpoints setzt ein Klick in die erste Spalte des Listings. RAM-Werte, Bits in Status, Option und INTCON und die Port-Pins lassen sich anklicken und ändern.
+
+### Projekte
+
+**Datei → Projekt speichern** legt alles in eine `.picsim`-Datei: Quelltext samt INCLUDE-Dateien, alle Einstellungen, das Layout, die Schalterstellungen und die Haltepunkte. Die Datei kannst du weitergeben. Wer sie mit **Datei → Projekt öffnen** lädt, hat alles genauso, das Programm ist gleich übersetzt und geladen. Eigene Dateipfade, Zoom, Darstellung und Update-Einstellung des Empfängers bleiben unverändert. Solange ein Projekt offen ist, aktualisiert Speichern im Editor auch die Projektdatei.
+
+Eine `.picsim`-Datei ist ein Zip mit `projekt.ini` und den Quelltexten, lässt sich also auch mit jedem Zip-Programm ansehen.
+
+### Fenster und Darstellung
+
+Beim ersten Start fragt PicSim, ob die Bereiche fest angeordnet oder frei verschiebbar sein sollen (später unter **Einstellungen → Fenster frei verschieben**). Fest angeordnet lassen sich die Trenner zwischen den Bereichen mit der Maus ziehen. **Ansicht → Layout zurücksetzen** stellt die Standardgrößen wieder her.
+
+Unter **Einstellungen → Darstellung** gibt es „Wie System“ (Standard), „Hell“ und „Dunkel“.
 
 ## Was simuliert wird
 

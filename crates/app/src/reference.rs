@@ -171,9 +171,17 @@ const REG_NOTES: &[&str] = &[
 pub type Insert = (String, bool);
 
 const HINT: &str = "Klicken: an der Cursorposition im Editor einfügen";
-const BLUE: Color32 = Color32::from_rgb(20, 60, 180);
-const PURPLE: Color32 = Color32::from_rgb(130, 40, 150);
-const GROUP: Color32 = Color32::from_rgb(40, 60, 140);
+fn blue(ui: &egui::Ui) -> Color32 {
+    crate::theme::pick(ui, Color32::from_rgb(20, 60, 180), Color32::from_rgb(110, 165, 255))
+}
+
+fn purple(ui: &egui::Ui) -> Color32 {
+    crate::theme::pick(ui, Color32::from_rgb(130, 40, 150), Color32::from_rgb(205, 135, 235))
+}
+
+fn group(ui: &egui::Ui) -> Color32 {
+    crate::theme::pick(ui, Color32::from_rgb(40, 60, 140), Color32::from_rgb(140, 165, 235))
+}
 
 /// Anklickbarer Text. Beim Überfahren Rahmen und Hinweis, beim Klick Einfügen.
 fn clickable(ui: &mut egui::Ui, text: RichText, insert: Option<Insert>, out: &mut Option<Insert>) -> egui::Response {
@@ -186,7 +194,7 @@ fn clickable(ui: &mut egui::Ui, text: RichText, insert: Option<Insert>, out: &mu
 
 fn clickable_response(ui: &egui::Ui, r: egui::Response, ins: Insert, out: &mut Option<Insert>) -> egui::Response {
     if r.hovered() {
-        ui.painter().rect_stroke(r.rect.expand(2.0), 3.0, (1.0, BLUE), egui::StrokeKind::Outside);
+        ui.painter().rect_stroke(r.rect.expand(2.0), 3.0, (1.0, blue(ui)), egui::StrokeKind::Outside);
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     if r.clicked() {
@@ -253,11 +261,11 @@ impl Reference {
                 if shown.is_empty() {
                     continue;
                 }
-                ui.label(RichText::new(title).italics().color(GROUP));
+                ui.label(RichText::new(title).italics().color(group(ui)));
                 ui.end_row();
                 for (m, ops, desc, cyc, code, flags, notes) in shown {
                     let ins = (format!("{}\t", m.to_lowercase()), true);
-                    clickable(ui, RichText::new(*m).monospace().strong().color(BLUE), Some(ins), out);
+                    clickable(ui, RichText::new(*m).monospace().strong().color(blue(ui)), Some(ins), out);
                     ui.label(RichText::new(*ops).monospace());
                     ui.label(*desc);
                     ui.label(*cyc);
@@ -309,7 +317,7 @@ impl Reference {
                             // EQU und SET stehen hinter einem Namen, die übrigen wie Befehle
                             let as_instr = !matches!(w, "EQU" | "SET" | "=");
                             let ins = (format!("{}\t", w.to_lowercase()), as_instr);
-                            clickable(ui, RichText::new(w).monospace().strong().color(PURPLE), Some(ins), out);
+                            clickable(ui, RichText::new(w).monospace().strong().color(purple(ui)), Some(ins), out);
                         }
                     });
                     ui.label(*desc);
@@ -371,7 +379,7 @@ fn registers(ui: &mut egui::Ui, cpu: &Cpu, out: &mut Option<Insert>) {
     });
     ui.separator();
     for (title, rows) in [("Bank 0", REGISTERS_BANK0), ("Bank 1", REGISTERS_BANK1)] {
-        ui.label(RichText::new(title).italics().strong().color(GROUP).size(15.0));
+        ui.label(RichText::new(title).italics().strong().color(group(ui)).size(15.0));
         for (k, (addr, name, bits, por, other)) in rows.iter().enumerate() {
             let fill = if k % 2 == 0 { ui.visuals().faint_bg_color } else { Color32::TRANSPARENT };
             egui::Frame::new().fill(fill).show(ui, |ui| {
@@ -379,7 +387,7 @@ fn registers(ui: &mut egui::Ui, cpu: &Cpu, out: &mut Option<Insert>) {
                     ui.spacing_mut().item_spacing.x = gap;
                     cell(ui, widths[0], mono(addr), Some(addr.to_string()), out);
                     let name_ins = (!name.is_empty()).then(|| name.to_string());
-                    cell(ui, widths[1], mono(name).strong().color(BLUE), name_ins, out);
+                    cell(ui, widths[1], mono(name).strong().color(blue(ui)), name_ins, out);
                     match bits {
                         RegBits::Bits(b) => {
                             for (j, (w, n)) in widths[2..10].iter().zip(b).enumerate() {
@@ -394,7 +402,7 @@ fn registers(ui: &mut egui::Ui, cpu: &Cpu, out: &mut Option<Insert>) {
                     let a = u8::from_str_radix(addr.trim_end_matches('h'), 16).unwrap_or(0);
                     let real = Cpu::map(a).is_some() && !name.is_empty() && *name != "INDF" && *name != "EECON2";
                     let now = if real { format!("{:08b}", cpu.peek(a)) } else { String::new() };
-                    cell(ui, widths[12], mono(&now).color(Color32::from_rgb(200, 40, 40)), None, out);
+                    cell(ui, widths[12], mono(&now).color(crate::theme::pick(ui, Color32::from_rgb(200, 40, 40), Color32::from_rgb(255, 100, 90))), None, out);
                 });
             });
         }

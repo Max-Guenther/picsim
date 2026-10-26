@@ -61,11 +61,8 @@ fn expand_includes(
     for (i, raw) in text.lines().enumerate() {
         let line = raw.trim_end_matches('\r');
         out.push(SrcLine { text: line.to_string(), file: file.to_string(), lineno: i + 1 });
-        let st = parse_statement(line);
-        if !matches!(st.op.as_deref(), Some("INCLUDE") | Some("#INCLUDE")) {
-            continue;
-        }
-        let name = st.operands.trim().trim_matches(|c| c == '"' || c == '<' || c == '>' || c == '\'');
+        let Some(name) = include_name(line) else { continue };
+        let name = name.as_str();
         let path = match dir {
             Some(d) => d.join(name),
             None => PathBuf::from(name),
@@ -83,6 +80,39 @@ fn expand_includes(
             Err(_) => errors.push((out.len(), format!("Includedatei nicht gefunden: {name}"))),
         }
     }
+}
+
+/// Dateiname, falls die Zeile eine INCLUDE-Anweisung ist.
+fn include_name(line: &str) -> Option<String> {
+    let st = parse_statement(line);
+    if !matches!(st.op.as_deref(), Some("INCLUDE") | Some("#INCLUDE")) {
+        return None;
+    }
+    Some(st.operands.trim().trim_matches(|c| c == '"' || c == '<' || c == '>' || c == '\'').to_string())
+}
+
+/// Alle per INCLUDE eingebundenen Dateien, auch verschachtelte, so wie der
+/// Assembler sie findet. Nicht vorhandene Dateien fehlen in der Liste.
+pub fn include_files(text: &str, dir: Option<&Path>) -> Vec<PathBuf> {
+    fn collect(text: &str, dir: Option<&Path>, depth: usize, out: &mut Vec<PathBuf>) {
+        for raw in text.lines() {
+            let Some(name) = include_name(raw.trim_end_matches('\r')) else { continue };
+            let path = match dir {
+                Some(d) => d.join(&name),
+                None => PathBuf::from(&name),
+            };
+            if depth > 8 || out.contains(&path) {
+                continue;
+            }
+            if let Ok(bytes) = std::fs::read(&path) {
+                out.push(path.clone());
+                collect(&decode(&bytes), path.parent(), depth + 1, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    collect(text, dir, 0, &mut out);
+    out
 }
 
 fn decode(bytes: &[u8]) -> String {
@@ -836,6 +866,18 @@ fn latin1(s: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn include_files_are_found_recursively() {
+        let dir = std::env::temp_dir().join(format!("picsim-inc-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("lib")).unwrap();
+        std::fs::write(dir.join("lib/a.inc"), "\tinclude \"b.inc\"\n").unwrap();
+        std::fs::write(dir.join("lib/b.inc"), "x equ 1\n").unwrap();
+        let src = "\tinclude \"lib/a.inc\"\n\tinclude fehlt.inc\n\tinclude \"lib/a.inc\"\n";
+        let files = include_files(src, Some(&dir));
+        assert_eq!(files, [dir.join("lib/a.inc"), dir.join("lib/b.inc")]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn asm(src: &str) -> Output {
         assemble(src, "test.src", None)

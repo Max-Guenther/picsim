@@ -48,6 +48,20 @@ impl Ini {
         self.sections.len() - 1
     }
 
+    /// Alle Einträge eines Abschnitts.
+    pub fn entries(&self, section: &str) -> &[(String, String)] {
+        self.sections
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(section))
+            .map(|(_, e)| e.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Abschnitt samt allen Einträgen entfernen.
+    pub fn remove_section(&mut self, section: &str) {
+        self.sections.retain(|(name, _)| !name.eq_ignore_ascii_case(section));
+    }
+
     pub fn get(&self, section: &str, key: &str) -> Option<&str> {
         self.sections
             .iter()
@@ -124,6 +138,14 @@ impl std::fmt::Display for Ini {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remove_section_ignores_case() {
+        let mut ini = Ini::parse("[A]\nx=1\n[Files]\nNAME=/tmp/a\n");
+        ini.remove_section("FILES");
+        assert_eq!(ini.get("FILES", "NAME"), None);
+        assert_eq!(ini.get("A", "x"), Some("1"));
+    }
 
     const ORIGINAL: &str = include_str!("../tests/picsimu.ini");
 
