@@ -14,6 +14,7 @@ mod dialog;
 mod editor;
 mod layout;
 mod periph;
+mod popout;
 mod project;
 mod reference;
 mod settings;

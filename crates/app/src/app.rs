@@ -130,6 +130,8 @@ impl PicSimApp {
         app.apps.load(&app.board.ini);
         app.layout = Layout::load(&app.board.ini);
         app.reference.open = app.board.ini.flag("Applikationen", "Nachschlagen");
+        app.reference.popped = app.board.ini.flag(crate::popout::SEC, "nachschlagen");
+        app.editor.popped = app.board.ini.flag(crate::popout::SEC, "editor");
         if app.board.ini.get("Applikationen", "NachschlagenReiter") == Some("Register") {
             app.reference.tab = Tab::Register;
         }
@@ -165,6 +167,8 @@ impl PicSimApp {
         self.apps.store(&mut self.board.ini);
         self.layout.store(&mut self.board.ini);
         self.board.ini.set_flag("Applikationen", "Nachschlagen", self.reference.open);
+        self.board.ini.set_flag(crate::popout::SEC, "nachschlagen", self.reference.popped);
+        self.board.ini.set_flag(crate::popout::SEC, "editor", self.editor.popped);
         let tab = if self.reference.tab == Tab::Register { "Register" } else { "Befehle" };
         self.board.ini.set("Applikationen", "NachschlagenReiter", tab);
         let ini = &mut self.board.ini;
@@ -835,15 +839,22 @@ impl PicSimApp {
         }
         let layout_area = self.layout.area(area);
         for i in 0..crate::layout::N {
-            if !self.layout.visible[i] {
+            if !self.layout.visible[i] || self.layout.popped[i] {
                 continue;
             }
             let mut open = true;
             let mut inner = None;
+            let mut pop = false;
+            let id = self.layout.window_id(i);
             let shown = self.layout.window(i, layout_area).open(&mut open).show(ctx, |ui| {
                 inner = Some(ui.max_rect());
+                pop = crate::popout::title_button(ui, id, true);
                 self.window_content(i, ui);
             });
+            if pop {
+                self.layout.popped[i] = true;
+                self.save_ini();
+            }
             if let Some(r) = shown {
                 let by_user = ctx.input(|i| i.pointer.any_down() || i.pointer.any_released());
                 self.layout.record(i, r.response.rect, inner, by_user);
@@ -860,14 +871,22 @@ impl PicSimApp {
     fn fixed_tiles(&mut self, ui: &mut egui::Ui) {
         let area = ui.max_rect();
         let (mut tiles, mut handles) = (Vec::new(), Vec::new());
-        self.layout.fixed.arrange(area, &self.layout.visible, &mut tiles, &mut handles);
+        self.layout.fixed.arrange(area, &self.layout.docked(), &mut tiles, &mut handles);
         for (i, rect) in tiles {
             let rect = rect.shrink(2.0);
             let mut tile = ui.new_child(egui::UiBuilder::new().max_rect(rect).id_salt(("kachel", i)));
             tile.set_clip_rect(rect.intersect(ui.clip_rect()));
             egui::Frame::group(tile.style()).show(&mut tile, |ui| {
                 ui.set_min_size(ui.available_size());
-                ui.label(egui::RichText::new(crate::layout::WINDOWS[i].1).strong());
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(crate::layout::WINDOWS[i].1).strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if crate::popout::button(ui) {
+                            self.layout.popped[i] = true;
+                            self.save_ini();
+                        }
+                    });
+                });
                 self.window_content(i, ui);
             });
         }
@@ -953,6 +972,27 @@ impl PicSimApp {
         }
     }
 
+    /// Herausgelöste Bereiche in eigenen Fenstern.
+    fn popouts(&mut self, ctx: &egui::Context, area: egui::Rect) {
+        for i in 0..crate::layout::N {
+            if !self.layout.visible[i] || !self.layout.popped[i] {
+                continue;
+            }
+            let (key, title, _) = crate::layout::WINDOWS[i];
+            let size = self.layout.size(i, area);
+            let open = crate::popout::show(ctx, key, title, size, |ui| {
+                // Tastenkürzel gehen an das Fenster, das gerade vorne ist
+                let ctx = ui.ctx().clone();
+                self.shortcuts(&ctx);
+                self.window_content(i, ui);
+            });
+            if !open {
+                self.layout.popped[i] = false;
+                self.save_ini();
+            }
+        }
+    }
+
     fn window_content(&mut self, i: usize, ui: &mut egui::Ui) {
         match crate::layout::WINDOWS[i].0 {
             "ram" => crate::view::ram(self, ui),
@@ -1032,7 +1072,9 @@ impl eframe::App for PicSimApp {
             egui::CentralPanel::default_margins().show(ui, |ui| self.fixed_tiles(ui));
         }
         self.mode_dialog(&ctx);
+        self.popouts(&ctx, ctx.content_rect());
 
+        let popped = (self.editor.popped, self.reference.popped);
         if let Some(action) = self.editor.show(&ctx) {
             match action {
                 EditorAction::Loaded(lst) => self.open_lst(&lst),
@@ -1057,6 +1099,9 @@ impl eframe::App for PicSimApp {
         }
         if let Some((text, instruction)) = self.reference.show(&ctx, &self.board.cpu) {
             self.editor.insert(&ctx, &text, instruction);
+        }
+        if popped != (self.editor.popped, self.reference.popped) {
+            self.save_ini();
         }
         self.dialogs.show_info(&ctx);
         self.alert_window(&ctx);
@@ -1193,6 +1238,35 @@ mod tests {
         let after = size(&app);
         assert!(after.x > before.x + 5.0, "Schalter breiter: {before:?} -> {after:?}");
         assert!(after.y > before.y + 5.0, "Schalter höher: {before:?} -> {after:?}");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn title_button_moves_a_window_into_its_own_window() {
+        use egui::{Event, PointerButton};
+        let root = std::env::temp_dir().join(format!("picsim-eigen-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ctx = egui::Context::default();
+        let mut app = machine_ctx(&root, "a", &ctx);
+        app.layout.set_free(true);
+        for _ in 0..4 {
+            frame(&ctx, &mut app, vec![]);
+        }
+        let ports = 2;
+        let id = app.layout.window_id(ports);
+        let outer = ctx.memory(|m| m.area_rect(id)).expect("Fenster gezeichnet");
+        let at = crate::popout::title_button_rect(&ctx, id).expect("Button gezeichnet").center();
+        assert!(outer.contains(at) && at.y < outer.top() + 30.0, "Button liegt in der Titelleiste: {at:?} in {outer:?}");
+        let button = |pressed| Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&ctx, &mut app, vec![Event::PointerMoved(at)]);
+        frame(&ctx, &mut app, vec![button(true)]);
+        frame(&ctx, &mut app, vec![button(false)]);
+        assert!(app.layout.popped[ports], "Ports stehen jetzt in einem eigenen Fenster");
+        assert!(!app.layout.docked()[ports]);
+        assert!(app.board.ini.flag(crate::popout::SEC, "ports"), "bleibt beim nächsten Start so");
+        // Ohne eigene Fenster (wie hier im Test) wird der Inhalt trotzdem gezeichnet
+        frame(&ctx, &mut app, vec![]);
+        assert!(app.layout.popped[ports]);
         std::fs::remove_dir_all(&root).unwrap();
     }
 

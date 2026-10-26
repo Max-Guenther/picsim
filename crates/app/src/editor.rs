@@ -78,6 +78,12 @@ pub struct Editor {
     /// Abstand der Tabstopps in Zeichen.
     pub tab_width: usize,
     dialog: Option<FileDialog<EditorDialog>>,
+    /// Editor steht in einem eigenen Fenster.
+    pub popped: bool,
+}
+
+fn window_id() -> egui::Id {
+    egui::Id::unique("editor_window")
 }
 
 #[derive(Clone, Copy)]
@@ -118,6 +124,7 @@ impl Default for Editor {
             scroll_to_line: None,
             confirm_discard: None,
             text_id: egui::Id::unique("editor_text"),
+            popped: false,
             tab_width: DEFAULT_TAB,
             dialog: None,
         }
@@ -322,7 +329,54 @@ impl Editor {
             return action;
         }
 
-        // Tastenkürzel, solange der Editor offen ist
+        if self.popped {
+            let title = self.title();
+            let still = crate::popout::show(ctx, "editor", &title, egui::vec2(780.0, 640.0), |ui| {
+                // Tastenkürzel und Rückfrage gehören hier ins eigene Fenster
+                let vctx = ui.ctx().clone();
+                if let Some(a) = self.keys(&vctx) {
+                    action = Some(a);
+                }
+                if let Some(a) = self.body(ui) {
+                    action = Some(a);
+                }
+                self.confirm_dialog(&vctx);
+            });
+            if !still {
+                self.popped = false;
+            }
+            return action;
+        }
+
+        if let Some(a) = self.keys(ctx) {
+            action = Some(a);
+        }
+        let mut open = true;
+        egui::Window::new(self.title()).order(egui::Order::Foreground)
+            .id(window_id())
+            .open(&mut open)
+            .default_size([780.0, 640.0])
+            .default_pos([460.0, 60.0])
+            .min_size([420.0, 300.0])
+            .resizable(true)
+            .show(ctx, |ui| {
+                if crate::popout::title_button(ui, window_id(), true) {
+                    self.popped = true;
+                }
+                if let Some(a) = self.body(ui) {
+                    action = Some(a);
+                }
+            });
+        if !open {
+            self.open = false;
+        }
+        self.confirm_dialog(ctx);
+        action
+    }
+
+    /// Tastenkürzel, solange der Editor offen ist.
+    fn keys(&mut self, ctx: &egui::Context) -> Option<EditorAction> {
+        let mut action = None;
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::S)) && self.save(AfterSave::Saved) {
             action = Some(EditorAction::Saved);
         }
@@ -332,84 +386,75 @@ impl Editor {
         if assemble_key {
             action = self.assemble();
         }
+        action
+    }
 
-        let mut open = true;
-        egui::Window::new(self.title()).order(egui::Order::Foreground)
-            .id(egui::Id::unique("editor_window"))
-            .open(&mut open)
-            .default_size([780.0, 640.0])
-            .default_pos([460.0, 60.0])
-            .min_size([420.0, 300.0])
-            .resizable(true)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button("Neu").clicked() {
-                        self.ask_or_run(Pending::New);
-                    }
-                    if ui.button("Öffnen…").clicked() {
-                        self.ask_or_run(Pending::Open);
-                    }
-                    if ui.button("Speichern").on_hover_text("Strg+S").clicked() && self.save(AfterSave::Saved) {
-                        action = Some(EditorAction::Saved);
-                    }
-                    if ui.button("Speichern unter…").clicked() {
-                        self.save_as(AfterSave::Saved);
-                    }
-                    ui.separator();
-                    let asm_btn = egui::Button::new(RichText::new("Assemblieren & Laden").strong());
-                    if ui.add(asm_btn).on_hover_text("F5 oder Strg+B").clicked() {
-                        action = self.assemble();
-                    }
-                    if ui.button("Befehle").on_hover_text("Befehlsübersicht und Registertabelle").clicked() {
-                        action = Some(EditorAction::ShowReference);
-                    }
-                    ui.separator();
-                    ui.label("Tabbreite");
-                    ui.add(egui::DragValue::new(&mut self.tab_width).range(2..=MAX_TAB))
-                        .on_hover_text("Abstand der Tabstopps in Zeichen");
-                });
-                if !self.message.is_empty() {
-                    let ok = self.errors.iter().all(|e| e.warning);
-                    let col = if ok {
-                        crate::theme::pick(ui, Color32::from_rgb(20, 110, 40), Color32::from_rgb(110, 210, 120))
+    /// Inhalt des Editorfensters.
+    fn body(&mut self, ui: &mut egui::Ui) -> Option<EditorAction> {
+        let mut action = None;
+        ui.horizontal(|ui| {
+            if ui.button("Neu").clicked() {
+                self.ask_or_run(Pending::New);
+            }
+            if ui.button("Öffnen…").clicked() {
+                self.ask_or_run(Pending::Open);
+            }
+            if ui.button("Speichern").on_hover_text("Strg+S").clicked() && self.save(AfterSave::Saved) {
+                action = Some(EditorAction::Saved);
+            }
+            if ui.button("Speichern unter…").clicked() {
+                self.save_as(AfterSave::Saved);
+            }
+            ui.separator();
+            let asm_btn = egui::Button::new(RichText::new("Assemblieren & Laden").strong());
+            if ui.add(asm_btn).on_hover_text("F5 oder Strg+B").clicked() {
+                action = self.assemble();
+            }
+            if ui.button("Befehle").on_hover_text("Befehlsübersicht und Registertabelle").clicked() {
+                action = Some(EditorAction::ShowReference);
+            }
+            ui.separator();
+            ui.label("Tabbreite");
+            ui.add(egui::DragValue::new(&mut self.tab_width).range(2..=MAX_TAB))
+                .on_hover_text("Abstand der Tabstopps in Zeichen");
+        });
+        if !self.message.is_empty() {
+            let ok = self.errors.iter().all(|e| e.warning);
+            let col = if ok {
+                crate::theme::pick(ui, Color32::from_rgb(20, 110, 40), Color32::from_rgb(110, 210, 120))
+            } else {
+                crate::theme::pick(ui, Color32::from_rgb(180, 20, 20), Color32::from_rgb(255, 110, 100))
+            };
+            ui.label(RichText::new(&self.message).color(col));
+        }
+        ui.separator();
+
+        let err_h = if self.errors.is_empty() { 0.0 } else { 110.0 };
+        let editor_h = (ui.available_height() - err_h).max(120.0);
+        self.code_area(ui, editor_h);
+
+        if !self.errors.is_empty() {
+            ui.separator();
+            let mut jump = None;
+            egui::ScrollArea::vertical().id_salt("errors").max_height(err_h - 10.0).show(ui, |ui| {
+                for e in &self.errors {
+                    let kind = if e.warning { "Warnung" } else { "Fehler" };
+                    let col = if e.warning {
+                        crate::theme::pick(ui, Color32::from_rgb(160, 110, 0), Color32::from_rgb(235, 185, 70))
                     } else {
                         crate::theme::pick(ui, Color32::from_rgb(180, 20, 20), Color32::from_rgb(255, 110, 100))
                     };
-                    ui.label(RichText::new(&self.message).color(col));
-                }
-                ui.separator();
-
-                let err_h = if self.errors.is_empty() { 0.0 } else { 110.0 };
-                let editor_h = (ui.available_height() - err_h).max(120.0);
-                self.code_area(ui, editor_h);
-
-                if !self.errors.is_empty() {
-                    ui.separator();
-                    let mut jump = None;
-                    egui::ScrollArea::vertical().id_salt("errors").max_height(err_h - 10.0).show(ui, |ui| {
-                        for e in &self.errors {
-                            let kind = if e.warning { "Warnung" } else { "Fehler" };
-                            let col = if e.warning {
-                                crate::theme::pick(ui, Color32::from_rgb(160, 110, 0), Color32::from_rgb(235, 185, 70))
-                            } else {
-                                crate::theme::pick(ui, Color32::from_rgb(180, 20, 20), Color32::from_rgb(255, 110, 100))
-                            };
-                            let text = format!("{kind} in Zeile {} ({}): {}", e.src_line, e.file, e.msg);
-                            let label = egui::Label::new(RichText::new(text).color(col)).sense(egui::Sense::click());
-                            if ui.add(label).on_hover_text("Klicken springt zur Zeile").clicked() {
-                                jump = Some(e.src_line);
-                            }
-                        }
-                    });
-                    if jump.is_some() {
-                        self.scroll_to_line = jump;
+                    let text = format!("{kind} in Zeile {} ({}): {}", e.src_line, e.file, e.msg);
+                    let label = egui::Label::new(RichText::new(text).color(col)).sense(egui::Sense::click());
+                    if ui.add(label).on_hover_text("Klicken springt zur Zeile").clicked() {
+                        jump = Some(e.src_line);
                     }
                 }
             });
-        if !open {
-            self.open = false;
+            if jump.is_some() {
+                self.scroll_to_line = jump;
+            }
         }
-        self.confirm_dialog(ctx);
         action
     }
 

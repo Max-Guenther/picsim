@@ -42,6 +42,8 @@ pub struct Layout {
     /// Wird erhöht, wenn die Fenster neu aufgebaut werden sollen.
     generation: u32,
     pub visible: [bool; N],
+    /// Bereich steht in einem eigenen Fenster statt im Hauptfenster.
+    pub popped: [bool; N],
     /// Außenmaße jedes Fensters als Anteil der Fläche (x, y, Breite, Höhe).
     frac: [[f32; 4]; N],
     /// Unterschied zwischen Außen- und Innengröße (Titelleiste, Rand).
@@ -70,6 +72,7 @@ impl Default for Layout {
             free: None,
             generation: session,
             visible: [true; N],
+            popped: [false; N],
             frac: WINDOWS.map(|w| w.2),
             deco: [DEFAULT_DECO; N],
             area: None,
@@ -94,6 +97,7 @@ impl Layout {
         l.free = ini.get(SEC, "FREI").map(|v| v != "0");
         for (i, (key, _, _)) in WINDOWS.iter().enumerate() {
             l.visible[i] = ini.get(SEC, key).map(|v| v != "0").unwrap_or(true);
+            l.popped[i] = ini.flag(crate::popout::SEC, key);
             if let Some(f) = ini.get(SEC, &format!("{key}_lage")).and_then(parse_frac) {
                 l.frac[i] = f;
             }
@@ -108,6 +112,7 @@ impl Layout {
         }
         for (i, (key, _, _)) in WINDOWS.iter().enumerate() {
             ini.set_flag(SEC, key, self.visible[i]);
+            ini.set_flag(crate::popout::SEC, key, self.popped[i]);
             let [x, y, w, h] = self.frac[i];
             ini.set(SEC, &format!("{key}_lage"), format!("{x:.4};{y:.4};{w:.4};{h:.4}"));
         }
@@ -141,6 +146,7 @@ impl Layout {
         }
         if ui.button("Layout zurücksetzen").on_hover_text("Alle Bereiche wieder an ihren Standardplatz und in Standardgröße").clicked() {
             self.visible = [true; N];
+            self.popped = [false; N];
             self.frac = WINDOWS.map(|w| w.2);
             self.fixed = crate::tiles::default_tree();
             self.rebuild();
@@ -188,9 +194,25 @@ impl Layout {
         self.area.unwrap_or(fallback)
     }
 
+    /// Im Hauptfenster zu zeigen (sichtbar und nicht herausgelöst).
+    pub fn docked(&self) -> [bool; N] {
+        std::array::from_fn(|i| self.visible[i] && !self.popped[i])
+    }
+
+    /// Größe von Fenster i im Hauptfenster, als Startgröße für ein eigenes Fenster.
+    pub fn size(&self, i: usize, fallback: Rect) -> Vec2 {
+        let area = self.area(fallback);
+        let [_, _, w, h] = self.frac[i];
+        vec2(w * area.width(), h * area.height()) - self.deco[i]
+    }
+
+    pub fn window_id(&self, i: usize) -> egui::Id {
+        egui::Id::unique(("fenster", WINDOWS[i].0, self.generation))
+    }
+
     /// Fenster i, verschiebbar und in der Größe änderbar, innerhalb von `area`.
     pub fn window(&self, i: usize, area: Rect) -> egui::Window<'static> {
-        let (key, title, _) = WINDOWS[i];
+        let title = WINDOWS[i].1;
         let [x, y, w, h] = self.frac[i];
         let outer = Rect::from_min_size(
             area.min + vec2(x * area.width(), y * area.height()),
@@ -200,7 +222,7 @@ impl Layout {
         let inner_size = (outer.size() - self.deco[i] - Vec2::splat(GAP)).max(vec2(60.0, 40.0));
         let inner = Rect::from_min_size(outer.min + Vec2::splat(GAP / 2.0), inner_size);
         egui::Window::new(title)
-            .id(egui::Id::unique(("fenster", key, self.generation)))
+            .id(self.window_id(i))
             .default_rect(inner)
             .constrain_to(area)
             .resizable(true)

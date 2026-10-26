@@ -277,6 +277,7 @@ impl Dialogs {
                 ui.label("• RAM-Werte anklicken, Hexwert eingeben, Enter.");
                 ui.label("• Bits in Status, Option und INTCON sowie Pins der Ports lassen sich anklicken.");
                 ui.label("• Rot markierte RAM-Werte haben sich beim letzten Schritt geändert.");
+                ui.label("• Der Button mit dem Pfeil oben rechts in einem Bereich (auch im Editor und beim Nachschlagen) holt ihn in ein eigenes Fenster, z.B. für einen zweiten Bildschirm oder den Splitscreen. Schließt du das Fenster, kommt der Bereich zurück.");
                 ui.label("• Die Einstellungen liegen in picsimu.ini. Über Datei > Einstellungen importieren lässt sich die INI des alten Programms übernehmen.");
                 ui.add_space(6.0);
                 ui.label(RichText::new("Assembler").strong());

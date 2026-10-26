@@ -51,7 +51,7 @@ Breakpoints setzt ein Klick in die erste Spalte des Listings. RAM-Werte, Bits in
 
 ### Projekte
 
-**Datei → Projekt speichern** legt alles in eine `.picsim`-Datei: Quelltext samt INCLUDE-Dateien, alle Einstellungen, das Layout, die Schalterstellungen und die Haltepunkte. Die Datei kannst du weitergeben. Wer sie mit **Datei → Projekt öffnen** lädt, hat alles genauso, das Programm ist gleich übersetzt und geladen. Eigene Dateipfade, Zoom, Darstellung und Update-Einstellung des Empfängers bleiben unverändert. Solange ein Projekt offen ist, aktualisiert Speichern im Editor auch die Projektdatei.
+**Datei → Projekt speichern** legt alles in eine `.picsim`-Datei: Quelltext samt INCLUDE-Dateien, alle Einstellungen, das Layout, die Schalterstellungen und die Haltepunkte. Die Datei kannst du weitergeben. Wer sie mit **Datei → Projekt öffnen** lädt, hat alles genauso, das Programm ist gleich übersetzt und geladen. Eigene Dateipfade, Zoom, Darstellung, eigene Fenster und Update-Einstellung des Empfängers bleiben unverändert. Solange ein Projekt offen ist, aktualisiert Speichern im Editor auch die Projektdatei.
 
 Ein Doppelklick auf eine `.picsim`-Datei öffnet sie in PicSim. Die Verknüpfung richtet PicSim beim ersten Start selbst ein (Linux: `~/.local/share`, Windows: für den eigenen Benutzer in der Registry, macOS: über die PicSim.app).
 
@@ -60,6 +60,8 @@ Eine `.picsim`-Datei ist ein Zip mit `projekt.ini` und den Quelltexten, lässt s
 ### Fenster und Darstellung
 
 Beim ersten Start fragt PicSim, ob die Bereiche fest angeordnet oder frei verschiebbar sein sollen (später unter **Einstellungen → Fenster frei verschieben**). Fest angeordnet lassen sich die Trenner zwischen den Bereichen mit der Maus ziehen. **Ansicht → Layout zurücksetzen** stellt die Standardgrößen wieder her.
+
+Jeder Bereich, der Editor und das Nachschlagen haben oben rechts einen Button mit Pfeil. Er holt den Bereich in ein eigenes Fenster, das du z.B. auf einen zweiten Bildschirm oder im Splitscreen neben den Simulator legen kannst. Schließt du das Fenster, kommt der Bereich zurück ins Hauptfenster. PicSim merkt sich, welche Bereiche in eigenen Fenstern stehen.
 
 Unter **Einstellungen → Darstellung** gibt es „Wie System“ (Standard), „Hell“ und „Dunkel“.
 

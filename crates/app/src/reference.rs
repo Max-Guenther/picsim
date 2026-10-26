@@ -16,6 +16,8 @@ pub struct Reference {
     pub open: bool,
     pub tab: Tab,
     filter: String,
+    /// Steht in einem eigenen Fenster.
+    pub popped: bool,
 }
 
 /// Mnemonic, Operanden, Beschreibung, Zyklen, Opcode, Flags, Hinweise
@@ -212,31 +214,50 @@ impl Reference {
     /// Zeigt das Fenster. Liefert den Text, der in den Editor soll.
     pub fn show(&mut self, ctx: &egui::Context, cpu: &Cpu) -> Option<Insert> {
         let mut out = None;
+        if !self.open {
+            return out;
+        }
+        if self.popped {
+            let still = crate::popout::show(ctx, "nachschlagen", "Nachschlagen", egui::vec2(1100.0, 700.0), |ui| {
+                self.body(ui, cpu, &mut out);
+            });
+            self.popped = still;
+            return out;
+        }
+        let id = egui::Id::unique("nachschlagen_fenster");
         let mut open = self.open;
         egui::Window::new("Nachschlagen")
+            .id(id)
             .order(egui::Order::Foreground)
             .open(&mut open)
             .resizable(true)
             .default_size([1330.0, 700.0])
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.tab, Tab::Befehle, RichText::new("Befehle").size(16.0));
-                    ui.selectable_value(&mut self.tab, Tab::Register, RichText::new("Register (Tabelle 4-1)").size(16.0));
-                    if self.tab == Tab::Befehle {
-                        ui.separator();
-                        let search = egui::TextEdit::singleline(&mut self.filter).hint_text("Suchen…").desired_width(180.0);
-                        ui.add(search);
-                    }
-                });
-                ui.label(RichText::new("Einträge anklicken, um sie im Editor an der Cursorposition einzufügen.").weak());
-                ui.separator();
-                egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| match self.tab {
-                    Tab::Befehle => self.instructions(ui, &mut out),
-                    Tab::Register => registers(ui, cpu, &mut out),
-                });
+                if crate::popout::title_button(ui, id, true) {
+                    self.popped = true;
+                }
+                self.body(ui, cpu, &mut out);
             });
         self.open = open;
         out
+    }
+
+    fn body(&mut self, ui: &mut egui::Ui, cpu: &Cpu, out: &mut Option<Insert>) {
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.tab, Tab::Befehle, RichText::new("Befehle").size(16.0));
+            ui.selectable_value(&mut self.tab, Tab::Register, RichText::new("Register (Tabelle 4-1)").size(16.0));
+            if self.tab == Tab::Befehle {
+                ui.separator();
+                let search = egui::TextEdit::singleline(&mut self.filter).hint_text("Suchen…").desired_width(180.0);
+                ui.add(search);
+            }
+        });
+        ui.label(RichText::new("Einträge anklicken, um sie im Editor an der Cursorposition einzufügen.").weak());
+        ui.separator();
+        egui::ScrollArea::both().auto_shrink([false, false]).show(ui, |ui| match self.tab {
+            Tab::Befehle => self.instructions(ui, out),
+            Tab::Register => registers(ui, cpu, out),
+        });
     }
 
     fn matches(&self, texts: &[&str]) -> bool {

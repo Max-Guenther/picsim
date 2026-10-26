@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.8.0
+
+- Bereiche in eigene Fenster holen: Jeder Bereich, der Editor und das Nachschlagen haben oben rechts einen Button mit Pfeil. Damit steht der Bereich in einem eigenen Fenster, das du auf einen zweiten Bildschirm oder im Splitscreen neben den Simulator legen kannst. Schließt du das Fenster, kommt der Bereich zurück ins Hauptfenster. Die Tasten F2 bis F10 gehen auch dort. PicSim merkt sich, welche Bereiche draußen stehen. Das gehört zum eigenen Bildschirm und wandert darum nicht mit ins Projekt
+
 ## 0.7.3
 
 - Mac: PicSim 0.7.2 stürzte direkt beim Start ab. Die Dateiverknüpfung hatte den internen Ereignis-Empfänger der App ersetzt, den das Fenstersystem selbst braucht. Jetzt wird er nur ergänzt

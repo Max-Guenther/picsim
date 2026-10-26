@@ -16,7 +16,7 @@ const INI_NAME: &str = "projekt.ini";
 pub const SEC: &str = "PROJEKT";
 pub const STATE: &str = "ZUSTAND";
 /// Abschnitte, die zu diesem Rechner gehören und nicht ins Projekt.
-const LOCAL: [&str; 3] = ["FILES", "UPDATE", "DISPLAY"];
+const LOCAL: [&str; 4] = ["FILES", "UPDATE", "DISPLAY", crate::popout::SEC];
 
 pub struct Project {
     pub ini: Ini,
@@ -204,7 +204,7 @@ mod tests {
         std::fs::write(dir.join("lib/regs.inc"), "status equ 3\n").unwrap();
         let src = b"\tinclude \"lib/regs.inc\"\n\tgoto 0\n".to_vec();
 
-        let mut settings = Ini::parse("[LED_ARRAY]\nLED0=RB3\n[FILES]\nNAME=/home/x/a.lst\n[UPDATE]\nAUTO=0\n");
+        let mut settings = Ini::parse("[LED_ARRAY]\nLED0=RB3\n[FILES]\nNAME=/home/x/a.lst\n[UPDATE]\nAUTO=0\n[EIGENE_FENSTER]\neditor=1\n");
         settings.set("EDITOR", "TABBREITE", "8");
         let mut p = Project::new(&settings);
         p.add_source("main.src", src.clone(), Some(&dir)).unwrap();
@@ -216,6 +216,7 @@ mod tests {
         assert_eq!(q.source(), Some("main.src"));
         assert_eq!(q.ini.get("FILES", "NAME"), None, "Pfade dieses Rechners gehören nicht ins Projekt");
         assert_eq!(q.ini.get("LED_ARRAY", "LED0"), Some("RB3"));
+        assert_eq!(q.ini.get(crate::popout::SEC, "editor"), None, "eigene Fenster hängen am Bildschirm dieses Rechners");
 
         // Beim Kollegen: seine eigenen Pfade und Update-Einstellung bleiben
         let local = Ini::parse("[UPDATE]\nAUTO=1\n[LED_ARRAY]\nLED0=RA0\n");
