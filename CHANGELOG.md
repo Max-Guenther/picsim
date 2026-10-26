@@ -1,5 +1,10 @@
 # Änderungen
 
+## 0.6.1
+
+- Kopieren, Ausschneiden und Einfügen im Editor funktionieren jetzt auch mit anderen Programmen. Vorher landete kopierter Text nur in PicSims eigener Zwischenablage. Auf dem Mac geht das wie gewohnt mit Cmd+C, Cmd+X und Cmd+V
+- Links im Programm (Info, "Was ist neu?") öffnen wieder den Browser
+
 ## 0.6.0
 
 - Tab im Editor springt jetzt zum nächsten Tabstopp statt immer gleich weit. Nach `status` und nach `porta` landet der Befehl also in derselben Spalte
