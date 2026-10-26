@@ -65,6 +65,7 @@ pub struct PicSimApp {
 impl PicSimApp {
     pub fn new(cc: &eframe::CreationContext<'_>, arg: Option<String>) -> Self {
         cc.egui_ctx.set_theme(egui::ThemePreference::Light);
+        crate::editor::install_tab_fonts(&cc.egui_ctx);
         let ini_path = config_dir().join("picsimu.ini");
         let ini = Ini::load(&ini_path).unwrap_or_else(|_| Ini::parse(DEFAULT_INI));
         let auto_update = ini.get("UPDATE", "AUTO").map(|v| v != "0").unwrap_or(true);
@@ -105,6 +106,9 @@ impl PicSimApp {
             zoom,
         };
         cc.egui_ctx.set_zoom_factor(zoom);
+        if let Some(n) = app.board.ini.number("EDITOR", "TABBREITE") {
+            app.editor.tab_width = (n as usize).clamp(2, crate::editor::MAX_TAB);
+        }
         app.apps.load(&app.board.ini);
         app.layout = Layout::load(&app.board.ini);
         app.reference.open = app.board.ini.flag("Applikationen", "Nachschlagen");
@@ -150,6 +154,7 @@ impl PicSimApp {
         ini.set("DISPLAY", "ZOOM", format!("{:.2}", self.zoom));
         ini.set("SETTINGS", "TEMPO", self.speed.name());
         ini.set("SETTINGS", "LANGSAM", format!("{}", self.slow_ips));
+        ini.set("EDITOR", "TABBREITE", self.editor.tab_width.to_string());
         if let Some(p) = &self.lst_path {
             ini.set("FILES", "NAME", p.to_string_lossy());
         }

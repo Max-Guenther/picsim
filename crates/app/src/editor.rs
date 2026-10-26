@@ -27,6 +27,33 @@ loop
 \tend
 ";
 
+pub const DEFAULT_TAB: usize = 8;
+pub const MAX_TAB: usize = 16;
+
+/// Schriftfamilie, deren Tabzeichen genau `n` Zeichen breit ist.
+fn tab_family(n: usize) -> egui::FontFamily {
+    egui::FontFamily::Name(format!("tab{n}").into())
+}
+
+/// egui zeichnet ein Tab immer gleich breit. Damit Tabs bis zum nächsten
+/// Tabstopp reichen, bekommt jede mögliche Restbreite eine eigene Kopie der
+/// Monospace-Schrift; `highlight` wählt pro Tab die passende.
+pub fn install_tab_fonts(ctx: &egui::Context) {
+    let mut defs = egui::FontDefinitions::default();
+    let Some(mono) = defs.families.get(&egui::FontFamily::Monospace).and_then(|f| f.first()).cloned() else {
+        return;
+    };
+    let Some(data) = defs.font_data.get(&mono).cloned() else { return };
+    for n in 1..=MAX_TAB {
+        let mut font = (*data).clone();
+        font.tweak.tab_size = n as f32;
+        let name = format!("{mono}-tab{n}");
+        defs.font_data.insert(name.clone(), std::sync::Arc::new(font));
+        defs.families.insert(tab_family(n), vec![name]);
+    }
+    ctx.set_fonts(defs);
+}
+
 pub enum EditorAction {
     /// Übersetzt und LST geschrieben: in den Simulator laden.
     Loaded(PathBuf),
@@ -45,6 +72,8 @@ pub struct Editor {
     scroll_to_line: Option<usize>,
     confirm_discard: Option<Pending>,
     text_id: egui::Id,
+    /// Abstand der Tabstopps in Zeichen.
+    pub tab_width: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -65,6 +94,7 @@ impl Default for Editor {
             scroll_to_line: None,
             confirm_discard: None,
             text_id: egui::Id::unique("editor_text"),
+            tab_width: DEFAULT_TAB,
         }
     }
 }
@@ -245,6 +275,10 @@ impl Editor {
                     if ui.button("Befehle").on_hover_text("Befehlsübersicht und Registertabelle").clicked() {
                         action = Some(EditorAction::ShowReference);
                     }
+                    ui.separator();
+                    ui.label("Tabbreite");
+                    ui.add(egui::DragValue::new(&mut self.tab_width).range(2..=MAX_TAB))
+                        .on_hover_text("Abstand der Tabstopps in Zeichen");
                 });
                 if !self.message.is_empty() {
                     let ok = self.errors.iter().all(|e| e.warning);
@@ -287,6 +321,7 @@ impl Editor {
         let font = FontId::monospace(14.0);
         let row_h = ui.ctx().fonts_mut(|f| f.row_height(&font));
         let errors = self.error_lines();
+        let tab = self.tab_width.clamp(2, MAX_TAB);
 
         let mut area = egui::ScrollArea::both().id_salt("code").max_height(height).auto_shrink([false, false]);
         if let Some(line) = self.scroll_to_line.take() {
@@ -301,7 +336,7 @@ impl Editor {
                 ui.add(egui::Label::new(gutter).selectable(false));
 
                 let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _wrap: f32| {
-                    let job = highlight(buf.as_str(), &errors, &font);
+                    let job = highlight(buf.as_str(), &errors, &font, tab);
                     ui.ctx().fonts_mut(|f| f.layout_job(job))
                 };
                 ui.add(
@@ -409,7 +444,25 @@ const ERROR_BG: Color32 = Color32::from_rgb(255, 215, 215);
 
 const PUNCT: &str = ",()+-";
 
-fn highlight(text: &str, error_lines: &HashSet<usize>, font: &FontId) -> LayoutJob {
+/// Hängt `text` an und lässt jedes Tab bis zum nächsten Tabstopp reichen.
+/// `col` ist die Spalte in der aktuellen Zeile.
+fn append(job: &mut LayoutJob, text: &str, fmt: &TextFormat, col: &mut usize, tab: usize) {
+    for (i, part) in text.split('\t').enumerate() {
+        if i > 0 {
+            let n = tab - *col % tab;
+            let mut f = fmt.clone();
+            f.font_id.family = tab_family(n);
+            job.append("\t", 0.0, f);
+            *col += n;
+        }
+        if !part.is_empty() {
+            job.append(part, 0.0, fmt.clone());
+            *col += part.chars().count();
+        }
+    }
+}
+
+fn highlight(text: &str, error_lines: &HashSet<usize>, font: &FontId, tab: usize) -> LayoutJob {
     let mut job = LayoutJob::default();
     job.wrap.max_width = f32::INFINITY;
     for (i, line) in text.split_inclusive('\n').enumerate() {
@@ -419,6 +472,7 @@ fn highlight(text: &str, error_lines: &HashSet<usize>, font: &FontId) -> LayoutJ
             Some(p) => line.split_at(p),
             None => (line, ""),
         };
+        let mut col = 0;
         let mut first = true;
         let mut rest = code;
         while let Some(c) = rest.chars().next() {
@@ -443,11 +497,11 @@ fn highlight(text: &str, error_lines: &HashSet<usize>, font: &FontId) -> LayoutJ
                 TEXT
             };
             first &= !word;
-            job.append(tok, 0.0, fmt(color));
+            append(&mut job, tok, &fmt(color), &mut col, tab);
             rest = tail;
         }
         if !comment.is_empty() {
-            job.append(comment, 0.0, fmt(COMMENT));
+            append(&mut job, comment, &fmt(COMMENT), &mut col, tab);
         }
     }
     job
@@ -460,7 +514,7 @@ mod tests {
     #[test]
     fn highlight_keeps_text() {
         let src = "loop\tbsf STATUS,5 ; Kommentar\n\tgoto loop\n";
-        let job = highlight(src, &HashSet::new(), &FontId::monospace(14.0));
+        let job = highlight(src, &HashSet::new(), &FontId::monospace(14.0), 8);
         assert_eq!(job.text, src);
         let colors: Vec<_> = job.sections.iter().map(|s| (&job.text[s.byte_range.start.0..s.byte_range.end.0], s.format.color)).collect();
         assert!(colors.contains(&("loop", LABEL)));
@@ -468,5 +522,18 @@ mod tests {
         assert!(colors.contains(&("5", NUMBER)));
         assert!(colors.contains(&("goto", MNEMONIC)));
         assert!(colors.contains(&("; Kommentar\n", COMMENT)));
+    }
+
+    #[test]
+    fn tabs_reach_next_stop() {
+        // "status" und "porta" sind verschieden lang, "equ" steht trotzdem in Spalte 8
+        let job = highlight("status\tequ\t3\nporta\tequ\t5\n\t; a\tb\n", &HashSet::new(), &FontId::monospace(14.0), 8);
+        let tabs: Vec<_> = job
+            .sections
+            .iter()
+            .filter(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0] == "\t")
+            .map(|s| s.format.font_id.family.clone())
+            .collect();
+        assert_eq!(tabs, [tab_family(2), tab_family(5), tab_family(3), tab_family(5), tab_family(8), tab_family(5)]);
     }
 }

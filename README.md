@@ -34,7 +34,7 @@ picsim programm        # wie im Original: .lst wird ergänzt
 ```
 
 1. **Quelltext bearbeiten** öffnet den Editor.
-2. **Assemblieren & Laden** (F5 oder Strg+B) übersetzt und schreibt `.LST`, `.HEX`, `.ERR` und `.SYM` neben die Quelldatei. Fehler sind im Editor rot markiert, ein Klick auf die Fehlermeldung springt zur Zeile.
+2. **Assemblieren & Laden** (F5 oder Strg+B) übersetzt und schreibt `.LST`, `.HEX`, `.ERR` und `.SYM` neben die Quelldatei. Fehler sind im Editor rot markiert, ein Klick auf die Fehlermeldung springt zur Zeile. Tab springt zum nächsten Tabstopp (alle 8 Zeichen, oben unter "Tabbreite" einstellbar).
 3. Das **Steuerpult** führt das Programm aus:
 
 | Taste | Funktion |

@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.6.0
+
+- Tab im Editor springt jetzt zum nächsten Tabstopp statt immer gleich weit. Nach `status` und nach `porta` landet der Befehl also in derselben Spalte
+- Tabstopps alle 8 Zeichen statt 4. Die Breite lässt sich oben im Editor unter "Tabbreite" ändern (2 bis 16) und bleibt beim nächsten Start erhalten
+- In der Datei bleiben echte Tabzeichen, der Assembler vom Prof liest sie also wie bisher
+
 ## 0.5.0
 
 - PicSim gibt es jetzt auch für Windows (64 Bit): `picsim-windows-x86_64.zip` laden, entpacken, `picsim.exe` starten. Der eingebaute Updater funktioniert dort genauso
