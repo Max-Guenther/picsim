@@ -40,6 +40,30 @@ pub struct Handle {
     px_per_unit: f32,
 }
 
+/// Eckgriff, wo sich ein senkrechter und ein waagerechter Trenner treffen.
+/// Ziehen bewegt beide, ändert also Breite und Höhe auf einmal.
+pub struct Corner {
+    /// Index des senkrechten Trenners in der Trennerliste.
+    pub v: usize,
+    /// Index des waagerechten Trenners.
+    pub h: usize,
+    pub rect: Rect,
+}
+
+/// Alle Stellen, an denen sich zwei Trenner berühren.
+pub fn corners(handles: &[Handle]) -> Vec<Corner> {
+    let mut out = Vec::new();
+    for (v, hv) in handles.iter().enumerate().filter(|(_, h)| h.row) {
+        for (h, hh) in handles.iter().enumerate().filter(|(_, h)| !h.row) {
+            if hv.rect.intersects(hh.rect) {
+                let center = pos2(hv.rect.center().x, hh.rect.center().y);
+                out.push(Corner { v, h, rect: Rect::from_center_size(center, eframe::egui::vec2(GRIP * 2.0, GRIP * 2.0)) });
+            }
+        }
+    }
+    out
+}
+
 fn split(key: &'static str, row: bool, children: Vec<Node>, sizes: &[f32]) -> Split {
     Split { key, row, children, sizes: sizes.to_vec() }
 }
@@ -221,6 +245,20 @@ mod tests {
         let (tiles, handles) = arrange(&default_tree(), &visible);
         assert!((tile(&tiles, 0).height() - 800.0).abs() < 0.5);
         assert!(!handles.iter().any(|h| h.key == "links"));
+    }
+
+    #[test]
+    fn corners_where_dividers_meet() {
+        let (_, handles) = arrange(&default_tree(), &[true; 12]);
+        let c = corners(&handles);
+        let names: Vec<_> = c.iter().map(|c| (handles[c.v].key, handles[c.v].a, handles[c.h].key, handles[c.h].a)).collect();
+        // Datenspeicher/Register gegen die Mitte
+        assert!(names.contains(&("spalten", 0, "links", 0)));
+        // Schalter rechts unten: Trenner Schalter/Taster trifft Trenner Geräte/Listing
+        assert!(names.contains(&("geraete", 0, "mitte", 1)));
+        for c in &c {
+            assert!(handles[c.v].rect.contains(c.rect.center()) && handles[c.h].rect.contains(c.rect.center()));
+        }
     }
 
     #[test]

@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.7.1
+
+- Fester Modus: Bereiche lassen sich auch an den Ecken greifen. Wo sich zwei Trenner treffen, ändert Ziehen Breite und Höhe auf einmal
+
 ## 0.7.0
 
 - Projektdateien: Datei > Projekt speichern legt alles in eine `.picsim`-Datei, die du weitergeben kannst. Darin stecken Quelltext samt INCLUDE-Dateien, alle Einstellungen (Pins, Schalternamen, LED-Farben, Applikationen, Tempo, Tabbreite), das Layout mit allen Größen, die Schalterstellungen und die Haltepunkte. Wer die Datei mit Datei > Projekt öffnen lädt, hat alles genauso und das Programm ist gleich übersetzt und geladen. Eigene Dateipfade, Zoom, Darstellung und Update-Einstellung bleiben dabei beim Empfänger, wie sie sind

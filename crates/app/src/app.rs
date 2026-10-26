@@ -856,6 +856,23 @@ impl PicSimApp {
             }
             stopped |= r.drag_stopped();
         }
+        // Ecken zuletzt: dort greift man beide Trenner zugleich
+        for c in crate::tiles::corners(&handles) {
+            let (v, h) = (&handles[c.v], &handles[c.h]);
+            let r = ui.interact(c.rect, egui::Id::unique(("ecke", v.key, v.a, h.key, h.a)), egui::Sense::drag());
+            if r.hovered() || r.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Move);
+                let stroke = egui::Stroke::new(3.0, ui.visuals().selection.bg_fill);
+                ui.painter().line_segment([v.rect.center_top(), v.rect.center_bottom()], stroke);
+                ui.painter().line_segment([h.rect.left_center(), h.rect.right_center()], stroke);
+            }
+            if r.dragged() {
+                let d = r.drag_delta();
+                self.layout.fixed.drag(v, d.x);
+                self.layout.fixed.drag(h, d.y);
+            }
+            stopped |= r.drag_stopped();
+        }
         if stopped {
             self.save_ini();
         }
@@ -1101,6 +1118,43 @@ mod tests {
         let mut f = eframe::Frame::_new_kittest();
         let mut out = ctx.run_ui(input, |ui| eframe::App::ui(app, ui, &mut f));
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn dragging_a_corner_resizes_width_and_height() {
+        use egui::{Event, PointerButton};
+        let root = std::env::temp_dir().join(format!("picsim-ecke-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ctx = egui::Context::default();
+        let mut app = machine_ctx(&root, "a", &ctx);
+        app.layout.set_free(false);
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, vec![]);
+
+        // Ecke rechts unten am Schalter-Bereich
+        let grips = &app.layout.grips;
+        let v = grips.iter().find(|h| h.key == "geraete" && h.a == 0).unwrap();
+        let h = grips.iter().find(|h| h.key == "mitte" && h.a == 1).unwrap();
+        let start = egui::pos2(v.rect.center().x, h.rect.center().y);
+        // Größe des Schalter-Bereichs bei einer festen Fläche
+        let size = |app: &PicSimApp| {
+            let (mut tiles, mut hs) = (Vec::new(), Vec::new());
+            let area = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 1000.0));
+            app.layout.fixed.arrange(area, &app.layout.visible, &mut tiles, &mut hs);
+            tiles.iter().find(|(i, _)| *i == 5).unwrap().1.size()
+        };
+        let before = size(&app);
+        let button = |pos, pressed| Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&ctx, &mut app, vec![Event::PointerMoved(start)]);
+        frame(&ctx, &mut app, vec![button(start, true)]);
+        for step in 1..=10 {
+            frame(&ctx, &mut app, vec![Event::PointerMoved(start + egui::vec2(step as f32 * 6.0, step as f32 * 4.0))]);
+        }
+        frame(&ctx, &mut app, vec![button(start + egui::vec2(60.0, 40.0), false)]);
+        let after = size(&app);
+        assert!(after.x > before.x + 5.0, "Schalter breiter: {before:?} -> {after:?}");
+        assert!(after.y > before.y + 5.0, "Schalter höher: {before:?} -> {after:?}");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
