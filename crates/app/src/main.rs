@@ -7,6 +7,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod assoc;
 mod apps;
 mod canvas;
 mod dialog;
@@ -51,6 +52,7 @@ fn icon() -> egui::IconData {
 
 fn main() -> eframe::Result {
     let arg = std::env::args().nth(1);
+    assoc::register();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(format!("PicSim {}", env!("CARGO_PKG_VERSION")))

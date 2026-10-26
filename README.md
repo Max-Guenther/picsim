@@ -53,6 +53,8 @@ Breakpoints setzt ein Klick in die erste Spalte des Listings. RAM-Werte, Bits in
 
 **Datei → Projekt speichern** legt alles in eine `.picsim`-Datei: Quelltext samt INCLUDE-Dateien, alle Einstellungen, das Layout, die Schalterstellungen und die Haltepunkte. Die Datei kannst du weitergeben. Wer sie mit **Datei → Projekt öffnen** lädt, hat alles genauso, das Programm ist gleich übersetzt und geladen. Eigene Dateipfade, Zoom, Darstellung und Update-Einstellung des Empfängers bleiben unverändert. Solange ein Projekt offen ist, aktualisiert Speichern im Editor auch die Projektdatei.
 
+Ein Doppelklick auf eine `.picsim`-Datei öffnet sie in PicSim. Die Verknüpfung richtet PicSim beim ersten Start selbst ein (Linux: `~/.local/share`, Windows: für den eigenen Benutzer in der Registry, macOS: über die PicSim.app).
+
 Eine `.picsim`-Datei ist ein Zip mit `projekt.ini` und den Quelltexten, lässt sich also auch mit jedem Zip-Programm ansehen.
 
 ### Fenster und Darstellung

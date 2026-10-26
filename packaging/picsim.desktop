@@ -8,3 +8,4 @@ Icon=picsim
 Terminal=false
 Categories=Development;Education;Electronics;
 StartupWMClass=picsim
+MimeType=application/x-picsim;

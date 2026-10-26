@@ -1,5 +1,9 @@
 # Änderungen
 
+## 0.7.2
+
+- Doppelklick auf eine `.picsim`-Datei öffnet PicSim mit dem Projekt. PicSim trägt sich dafür beim Start selbst als Programm für Projektdateien ein, nur für den eigenen Benutzer und ohne Adminrechte. Unter Windows wird der Pfad bei jedem Start erneuert, falls `picsim.exe` verschoben wurde. Auf dem Mac geht das über die PicSim.app, auch wenn PicSim schon läuft
+
 ## 0.7.1
 
 - Fester Modus: Bereiche lassen sich auch an den Ecken greifen. Wo sich zwei Trenner treffen, ändert Ziehen Breite und Höhe auf einmal

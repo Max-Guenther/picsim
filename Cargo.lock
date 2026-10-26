@@ -2241,6 +2241,9 @@ dependencies = [
  "eframe",
  "egui_extras",
  "flate2",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "picsim-asm",
  "picsim-core",
  "rfd",
@@ -2251,6 +2254,7 @@ dependencies = [
  "sha2",
  "tar",
  "ureq",
+ "windows-sys 0.61.2",
  "winresource",
  "zip",
 ]

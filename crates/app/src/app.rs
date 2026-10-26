@@ -80,6 +80,7 @@ enum AppDialog {
 
 impl PicSimApp {
     pub fn new(cc: &eframe::CreationContext<'_>, arg: Option<String>) -> Self {
+        crate::assoc::install(&cc.egui_ctx);
         let cache = dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("picsim");
         Self::with_dirs(cc, arg, config_dir(), cache)
     }
@@ -978,6 +979,10 @@ impl eframe::App for PicSimApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.finish_dialog(&ctx);
+        // macOS: im Finder doppelgeklickte Dateien
+        for p in crate::assoc::take_opened() {
+            self.open_any(&p);
+        }
         if !self.editor.has_focus(&ctx) {
             self.shortcuts(&ctx);
         }
