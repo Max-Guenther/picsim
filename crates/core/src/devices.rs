@@ -289,6 +289,9 @@ pub struct SevenSegConfig {
     pub digit_inverted: bool,
     pub latch: [bool; 8],
     pub color: SegColor,
+    /// Stelle 1 steht links (sonst rechts). Nur die Darstellung, die
+    /// Zuordnung Digit-Pin zu Stelle bleibt gleich.
+    pub digit1_left: bool,
 }
 
 impl SevenSegConfig {
@@ -301,6 +304,7 @@ impl SevenSegConfig {
         }
         c.common_anode = ini.flag("SSEG", "CA");
         c.digit_inverted = ini.flag("SSEG", "DIGITINV");
+        c.digit1_left = ini.flag("SSEG", "DIGIT1LINKS");
         c.color = if ini.flag("SSEG", "GRUEN") {
             SegColor::Gruen
         } else if ini.flag("SSEG", "BLAU") {
@@ -325,6 +329,16 @@ impl SevenSegConfig {
         ini.set_flag("SSEG", "GELB", self.color == SegColor::Gelb);
         ini.set_flag("SSEG", "DIGITINV", self.digit_inverted);
         ini.set_flag("SSEG", "CA", self.common_anode);
+        ini.set_flag("SSEG", "DIGIT1LINKS", self.digit1_left);
+    }
+
+    /// Platz von links (0..8) für Stelle `d` (0 = Stelle 1).
+    pub fn slot(&self, d: usize) -> usize {
+        if self.digit1_left {
+            d
+        } else {
+            7 - d
+        }
     }
 }
 
@@ -579,6 +593,44 @@ mod tests {
         assert_eq!(f[0][0], 1.0);
         assert_eq!(f[0][1], 0.0);
         assert_eq!(f[1][1], 1.0);
+    }
+
+    #[test]
+    fn sevenseg_digit_order() {
+        let mut cfg = SevenSegConfig::default();
+        assert_eq!(cfg.slot(0), 7, "Standard wie bisher: Stelle 1 rechts");
+        assert_eq!(cfg.slot(7), 0);
+        cfg.digit1_left = true;
+        assert_eq!((0..8).map(|d| cfg.slot(d)).collect::<Vec<_>>(), (0..8).collect::<Vec<_>>());
+        // Einstellung übersteht die INI, alte INIs ohne Eintrag bleiben bei rechts
+        let mut ini = Ini::default();
+        cfg.to_ini(&mut ini);
+        assert!(SevenSegConfig::from_ini(&ini).digit1_left);
+        assert!(!SevenSegConfig::from_ini(&Ini::parse("[SSEG]\nCA=0\n")).digit1_left);
+    }
+
+    /// Gemeinsame Anode: Segment leuchtet bei Low. Negiertes Digitselect:
+    /// Stelle aktiv bei Low. Bit i der Segmente gehört zu a, b, .. g, dp.
+    #[test]
+    fn sevenseg_polarity_and_segment_bits() {
+        let seg = std::array::from_fn(|i| PinRef::port(1, i as u8));
+        let mut digit = [PinRef::Nc; 8];
+        digit[0] = PinRef::port(0, 0);
+        let frame = |cfg: &SevenSegConfig, porta: u8, portb: u8| {
+            let mut s = SevenSeg::new(cfg.clone());
+            s.observe(&[porta, portb, 0, 0, 0], 10);
+            let mut f = [[0.0; 8]; 8];
+            s.take_frame(&[0; 5], &mut f);
+            f[0]
+        };
+        // "1" = Segmente b und c
+        let mut cfg = SevenSegConfig { seg, digit, ..Default::default() };
+        assert_eq!(frame(&cfg, 0x01, 0b0000_0110), [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        cfg.common_anode = true;
+        assert_eq!(frame(&cfg, 0x01, !0b0000_0110), [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        cfg.digit_inverted = true;
+        assert_eq!(frame(&cfg, 0x00, !0b0000_0110), [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(frame(&cfg, 0x01, !0b0000_0110), [0.0; 8], "Stelle aus");
     }
 
     #[test]

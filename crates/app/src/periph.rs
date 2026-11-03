@@ -233,8 +233,9 @@ pub fn seven_seg(app: &mut PicSimApp, ui: &mut egui::Ui) {
     c.painter
         .rect_filled(c.rect, 3.0, Color32::from_rgb(20, 8, 8));
     for d in 0..8 {
-        // Stelle 1 rechts, wie üblich bei Multiplexanzeigen
-        let x = c.rect.right() - 8.0 - (d as f32 + 1.0) * (dw + 6.0);
+        // Stelle 1 rechts (Standard) oder links, siehe Einstellungen
+        let slot = app.board.sseg.cfg.slot(d);
+        let x = c.rect.right() - 8.0 - (8 - slot) as f32 * (dw + 6.0);
         let origin = pos2(x, c.rect.top() + 7.0);
         for s in 0..8 {
             draw_segment(

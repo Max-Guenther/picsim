@@ -143,6 +143,7 @@ impl Dialogs {
             ui.separator();
             changed |= ui.checkbox(&mut cfg.common_anode, "Gemeinsame Anode (Segmente aktiv bei Low)").changed();
             changed |= ui.checkbox(&mut cfg.digit_inverted, "Negiertes Digitselect (z.B. über Transistor)").changed();
+            changed |= ui.checkbox(&mut cfg.digit1_left, "Digit 1 links (sonst rechts)").changed();
             ui.horizontal(|ui| {
                 ui.label("Farbe");
                 for (c, n) in [(SegColor::Rot, "rot"), (SegColor::Gruen, "grün"), (SegColor::Blau, "blau"), (SegColor::Gelb, "gelb")] {
