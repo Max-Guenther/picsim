@@ -55,6 +55,8 @@ pub struct PicSimApp {
     /// RAM-Inhalt vor dem letzten Schritt, für die Markierung von Änderungen.
     pub prev_ram: [u8; 256],
     pub ram_edit: Option<(u8, String)>,
+    /// Gerade bearbeiteter Wert in der Registeranzeige (W, FSR, PCL, ...).
+    pub reg_edit: Option<(crate::view::RegField, String)>,
     pub seg_frame: [[f32; 8]; 8],
     pub dialogs: Dialogs,
     pub editor: Editor,
@@ -86,7 +88,7 @@ impl PicSimApp {
     }
 
     /// Wie `new`, mit eigenem Ordner für die ini und den Cache (für Tests).
-    fn with_dirs(cc: &eframe::CreationContext<'_>, arg: Option<String>, config: PathBuf, cache_dir: PathBuf) -> Self {
+    pub(crate) fn with_dirs(cc: &eframe::CreationContext<'_>, arg: Option<String>, config: PathBuf, cache_dir: PathBuf) -> Self {
         crate::editor::install_tab_fonts(&cc.egui_ctx);
         let ini_path = config.join("picsimu.ini");
         let ini = Ini::load(&ini_path).unwrap_or_else(|_| Ini::parse(DEFAULT_INI));
@@ -110,6 +112,7 @@ impl PicSimApp {
             scroll_to_pc: true,
             prev_ram: [0; 256],
             ram_edit: None,
+            reg_edit: None,
             seg_frame: [[0.0; 8]; 8],
             dialogs: Dialogs::default(),
             editor: Editor::default(),

@@ -100,6 +100,7 @@ fn ram_cell(app: &mut PicSimApp, ui: &mut egui::Ui, addr: u8) {
     }
     let r = ui.add(egui::Label::new(t).sense(Sense::click()));
     if r.clicked() && implemented {
+        app.reg_edit = None;
         app.ram_edit = Some((addr, format!("{v:02X}")));
     }
     r.on_hover_text(format!(
@@ -145,6 +146,63 @@ fn reg_grid(ui: &mut egui::Ui, id: &str, rows: &[(&str, String)]) {
     });
 }
 
+/// Register, das sich in der Registeranzeige direkt ändern lässt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegField {
+    /// Das W-Register liegt nicht im Datenspeicher.
+    W,
+    /// Register im Datenspeicher (FSR, PCL, PCLATH, Status).
+    Addr(u8),
+}
+
+impl RegField {
+    fn read(self, cpu: &picsim_core::Cpu) -> u8 {
+        match self {
+            RegField::W => cpu.w,
+            RegField::Addr(STATUS) => cpu.status(),
+            RegField::Addr(a) => cpu.peek(a),
+        }
+    }
+
+    /// Schreibt wie ein Klick in den Datenspeicher (ohne Seiteneffekte eines Befehls).
+    pub fn write(self, cpu: &mut picsim_core::Cpu, v: u8) {
+        match self {
+            RegField::W => cpu.w = v,
+            RegField::Addr(a) => cpu.poke(a, v),
+        }
+    }
+}
+
+/// Name und Wert in einer Zeile, der Wert lässt sich anklicken und als
+/// Hexzahl ändern (Enter übernimmt, Escape bricht ab).
+fn reg_edit_row(app: &mut PicSimApp, ui: &mut egui::Ui, name: &str, field: RegField) {
+    ui.label(name);
+    if let Some((f, text)) = &mut app.reg_edit {
+        if *f == field {
+            match hex_edit(ui, text) {
+                CellEdit::Open => {}
+                CellEdit::Commit(v) => {
+                    if let Some(v) = v {
+                        field.write(&mut app.board.cpu, v);
+                    }
+                    app.reg_edit = None;
+                }
+                CellEdit::Cancel => app.reg_edit = None,
+            }
+            ui.end_row();
+            return;
+        }
+    }
+    let v = field.read(&app.board.cpu);
+    let r = ui.add(egui::Label::new(RichText::new(format!("{v:02X}")).monospace()).sense(Sense::click()));
+    if r.clicked() {
+        app.ram_edit = None;
+        app.reg_edit = Some((field, format!("{v:02X}")));
+    }
+    r.on_hover_text(format!("{name}: {v} dezimal, {v:08b}b. Klicken zum Ändern"));
+    ui.end_row();
+}
+
 /// Fenster "Spezialfunktionsregister".
 pub fn sfr(app: &mut PicSimApp, ui: &mut egui::Ui) {
     egui::ScrollArea::both()
@@ -154,14 +212,14 @@ pub fn sfr(app: &mut PicSimApp, ui: &mut egui::Ui) {
 }
 
 fn sfr_content(app: &mut PicSimApp, ui: &mut egui::Ui) {
-    let cpu = &app.board.cpu;
     let visible = [
-        ("W-Reg", format!("{:02X}", cpu.w)),
-        ("FSR", format!("{:02X}", cpu.peek(0x04))),
-        ("PCL", format!("{:02X}", cpu.peek(0x02))),
-        ("PCLATH", format!("{:02X}", cpu.peek(0x0A))),
-        ("Status", format!("{:02X}", cpu.status())),
+        ("W-Reg", RegField::W),
+        ("FSR", RegField::Addr(0x04)),
+        ("PCL", RegField::Addr(0x02)),
+        ("PCLATH", RegField::Addr(0x0A)),
+        ("Status", RegField::Addr(STATUS)),
     ];
+    let cpu = &app.board.cpu;
     let hidden = [
         ("PC", format!("{:04X}", cpu.pc)),
         ("Stackp.", format!("{}", cpu.sp)),
@@ -170,7 +228,11 @@ fn sfr_content(app: &mut PicSimApp, ui: &mut egui::Ui) {
         ("WDT", format!("{:.1} ms", cpu.wdt_us / 1000.0)),
     ];
     ui.columns(2, |cols| {
-        reg_grid(&mut cols[0], "sfr_visible", &visible);
+        egui::Grid::new("sfr_visible").show(&mut cols[0], |ui| {
+            for (name, field) in visible {
+                reg_edit_row(app, ui, name, field);
+            }
+        });
         reg_grid(&mut cols[1], "sfr_hidden", &hidden);
     });
     ui.horizontal(|ui| {
@@ -331,6 +393,50 @@ mod tests {
         assert_eq!(frame(&ctx, &mut text, &[]), CellEdit::Open);
         text = "3F".into();
         assert_eq!(frame(&ctx, &mut text, &[egui::Key::Enter]), CellEdit::Commit(Some(0x3F)));
+    }
+
+    #[test]
+    fn w_register_is_writable() {
+        let mut cpu = picsim_core::Cpu::new();
+        RegField::W.write(&mut cpu, 0xA5);
+        assert_eq!(cpu.w, 0xA5);
+        assert_eq!(RegField::W.read(&cpu), 0xA5);
+        // Nicht im Datenspeicher gelandet
+        assert!((0..=255u8).all(|a| cpu.peek(a) != 0xA5));
+        RegField::Addr(0x04).write(&mut cpu, 0x3C);
+        assert_eq!(RegField::Addr(0x04).read(&cpu), 0x3C);
+        assert_eq!(cpu.peek(0x84), 0x3C, "FSR ist in beiden Bänken gleich");
+    }
+
+    /// Klick auf den W-Wert, Hexzahl tippen, Enter: W hat den neuen Wert.
+    #[test]
+    fn w_register_edit_in_view() {
+        let root = std::env::temp_dir().join(format!("picsim-wreg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let config = root.join("config");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(config.join("picsimu.ini"), "[UPDATE]\nAUTO=0\n").unwrap();
+        let ctx = egui::Context::default();
+        let cc = eframe::CreationContext::_new_kittest(ctx.clone());
+        let mut app = PicSimApp::with_dirs(&cc, None, config, root.join("cache"));
+        app.reg_edit = Some((RegField::W, "00".into()));
+        let run = |app: &mut PicSimApp, keys: &[egui::Key]| {
+            let mut input = egui::RawInput { focused: true, ..Default::default() };
+            for &key in keys {
+                for pressed in [true, false] {
+                    input.events.push(egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: egui::Modifiers::NONE });
+                }
+            }
+            let mut out = ctx.run_ui(input, |ui| sfr_content(app, ui));
+            out.textures_delta.clear();
+        };
+        run(&mut app, &[]);
+        run(&mut app, &[]);
+        app.reg_edit.as_mut().unwrap().1 = "7E".into();
+        run(&mut app, &[egui::Key::Enter]);
+        assert_eq!(app.board.cpu.w, 0x7E);
+        assert!(app.reg_edit.is_none());
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

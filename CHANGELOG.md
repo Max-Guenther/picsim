@@ -1,5 +1,12 @@
 # Änderungen
 
+## Unveröffentlicht
+
+- W-Register direkt ändern: In den Spezialfunktionsregistern lassen sich W-Reg, FSR, PCL, PCLATH und Status anklicken, Hexwert eintippen, Enter. Escape oder Wegklicken bricht ab
+- Step over (F9) bei CALL: Das Unterprogramm läuft Befehl für Befehl im eingestellten Tempo durch und hält genau am Befehl nach dem CALL, auch wenn der CALL auf der letzten Programmadresse steht. Breakpoints im Unterprogramm halten an. Mit Tests für lange (über 20.000 Zyklen), rekursive Unterprogramme und Breakpoints abgesichert
+- Editor: Steht ein Befehl wie `call` ohne Einrückung in der ersten Spalte, ist er jetzt als Befehl gefärbt statt als Label, genau wie der Assembler ihn liest
+- Ports: Fahre über die leeren Bits von RA, dann erklärt PicSim, warum RA5 bis RA7 beim 16F84 fehlen. Der Takt hängt dort an den eigenen Pins OSC1/OSC2, nicht an RA6/RA7
+
 ## 0.8.0
 
 - Bereiche in eigene Fenster holen: Jeder Bereich, der Editor und das Nachschlagen haben oben rechts einen Button mit Pfeil. Damit steht der Bereich in einem eigenen Fenster, das du auf einen zweiten Bildschirm oder im Splitscreen neben den Simulator legen kannst. Schließt du das Fenster, kommt der Bereich zurück ins Hauptfenster. Die Tasten F2 bis F10 gehen auch dort. PicSim merkt sich, welche Bereiche draußen stehen. Das gehört zum eigenen Bildschirm und wandert darum nicht mit ins Projekt

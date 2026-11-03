@@ -640,6 +640,17 @@ fn highlight(text: &str, error_lines: &HashSet<usize>, font: &FontId, tab: usize
         };
         let mut col = 0;
         let mut first = true;
+        // Wie der Assembler (parse_statement): Ein Wort in Spalte 1 ist nur
+        // dann ein Label, wenn es kein Befehl/keine Direktive ist, mit ':'
+        // endet oder EQU/SET/= folgt. Sonst wird z.B. "call up" ohne
+        // Einrückung übersetzt, aber im Editor wie ein Label gefärbt.
+        let mut words = code.split(|c: char| c.is_whitespace() || c == ',');
+        let w1 = words.find(|w| !w.is_empty()).unwrap_or("");
+        let w2 = words.find(|w| !w.is_empty()).unwrap_or("");
+        let defines = matches!(w2.to_ascii_uppercase().as_str(), "EQU" | "SET" | "=");
+        let col1_is_label = w1.ends_with(':')
+            || defines
+            || !(picsim_asm::is_mnemonic(w1) || picsim_asm::is_directive(w1));
         let mut rest = code;
         while let Some(c) = rest.chars().next() {
             let len = if c.is_whitespace() || PUNCT.contains(c) {
@@ -651,7 +662,7 @@ fn highlight(text: &str, error_lines: &HashSet<usize>, font: &FontId, tab: usize
             let word = !c.is_whitespace() && !PUNCT.contains(c);
             let color = if !word {
                 pal.text
-            } else if first && line.starts_with(tok) {
+            } else if first && line.starts_with(tok) && col1_is_label {
                 pal.label
             } else if picsim_asm::is_mnemonic(tok) {
                 pal.mnemonic
@@ -688,6 +699,21 @@ mod tests {
         assert!(colors.contains(&("5", LIGHT.number)));
         assert!(colors.contains(&("goto", LIGHT.mnemonic)));
         assert!(colors.contains(&("; Kommentar\n", LIGHT.comment)));
+    }
+
+    /// Befehle ohne Einrückung übersetzt der Assembler als Befehl, also
+    /// müssen sie auch als Befehl gefärbt sein, nicht als Label.
+    #[test]
+    fn instruction_in_first_column_is_not_a_label() {
+        let src = "call up\nup movlw 5\nret: return\nCALL equ 3\norg 0\n";
+        let job = highlight(src, &HashSet::new(), &FontId::monospace(14.0), 8, &LIGHT);
+        let colors: Vec<_> = job.sections.iter().map(|s| (&job.text[s.byte_range.start.0..s.byte_range.end.0], s.format.color)).collect();
+        assert!(colors.contains(&("call", LIGHT.mnemonic)), "{colors:?}");
+        assert!(colors.contains(&("up", LIGHT.label)));
+        assert!(colors.contains(&("movlw", LIGHT.mnemonic)));
+        assert!(colors.contains(&("ret:", LIGHT.label)));
+        assert!(colors.contains(&("CALL", LIGHT.label)), "vor EQU ist es ein Name");
+        assert!(colors.contains(&("org", LIGHT.directive)));
     }
 
     #[test]

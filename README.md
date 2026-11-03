@@ -44,10 +44,10 @@ picsim projekt.picsim  # Projekt öffnen
 | F6 | Step out: bis zum Rücksprung aus dem Unterprogramm |
 | F7 | Ignore: nächsten Befehl überspringen |
 | F8 | Step in: einen Befehl ausführen |
-| F9 | Step over: Unterprogramm in einem Rutsch |
+| F9 | Step over: Unterprogramm in einem Rutsch (läuft wirklich durch, hält am Befehl nach dem CALL) |
 | F10 | Go: bis zum Breakpoint, nochmal drücken hält an |
 
-Breakpoints setzt ein Klick in die erste Spalte des Listings. RAM-Werte, Bits in Status, Option und INTCON und die Port-Pins lassen sich anklicken und ändern.
+Breakpoints setzt ein Klick in die erste Spalte des Listings. RAM-Werte, das W-Register, FSR, PCL, PCLATH, Status, die Bits in Status, Option und INTCON und die Port-Pins lassen sich anklicken und ändern. PORTA hat beim 16F84 nur RA0 bis RA4, RA5 bis RA7 gibt es nicht (der Takt hängt an den eigenen Pins OSC1/OSC2).
 
 ### Projekte
 

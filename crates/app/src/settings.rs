@@ -264,7 +264,7 @@ impl Dialogs {
                         ("F6", "Step out: bis zum Rücksprung aus dem Unterprogramm"),
                         ("F7", "Ignore: nächsten Befehl überspringen"),
                         ("F8", "Step in: einen Befehl ausführen"),
-                        ("F9", "Step over: Unterprogramm in einem Rutsch"),
+                        ("F9", "Step over: steht der PC auf CALL, läuft das Unterprogramm ganz durch (wie Go, im eingestellten Tempo) und hält am Befehl nach dem CALL. Breakpoints darin halten an"),
                         ("F10", "Go: starten bis Breakpoint, nochmal drücken hält an"),
                     ] {
                         ui.label(RichText::new(k).monospace().strong());

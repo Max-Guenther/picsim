@@ -332,3 +332,28 @@ fn testo01_runs() {
     steps(&mut cpu, 6);
     assert!(!cpu.pin(0, 0));
 }
+
+/// PIC16F84(A): PORTA hat nur RA0..RA4. RA5..RA7 gibt es nicht, auch keine
+/// RA6/RA7 als Oszillator-Portbits (die gibt es erst bei 16F628A/16F88).
+/// Die Bits lesen sich immer als 0, egal was im Latch oder außen anliegt.
+#[test]
+fn porta_has_only_ra0_to_ra4() {
+    assert_eq!(Cpu::port_width(0), 5);
+    assert_eq!(Cpu::port_width(1), 8);
+    let mut cpu = cpu_with(&[
+        bsf(STATUS, 5),
+        clrf(0x05), // TRISA (Bank 1) = 0, alles Ausgang
+        bcf(STATUS, 5),
+        movlw(0xFF),
+        movwf(0x05), // PORTA = FF
+        movf(0x05, false),
+    ]);
+    cpu.set_input(0, 6, true);
+    cpu.set_input(0, 7, true);
+    steps(&mut cpu, 6);
+    assert_eq!(cpu.w, 0x1F, "Bits 5..7 von PORTA lesen sich als 0");
+    assert_eq!(cpu.pins()[0], 0x1F);
+    assert!(!cpu.pin(0, 6) && !cpu.pin(0, 7));
+    // TRISA ist auch nur 5 Bit breit, darüber immer "Eingang"
+    assert_eq!(cpu.tris(0) & 0xE0, 0xE0);
+}

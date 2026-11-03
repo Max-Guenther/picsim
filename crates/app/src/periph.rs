@@ -61,7 +61,8 @@ pub fn ports(app: &mut PicSimApp, ui: &mut egui::Ui) {
                         ui.label("Pin");
                         for bit in (0..8u8).rev() {
                             if bit >= width {
-                                ui.label(RichText::new("-").monospace().weak());
+                                ui.label(RichText::new("-").monospace().weak())
+                                    .on_hover_text(missing_pin_hint(port, bit));
                                 continue;
                             }
                             let on = pins >> bit & 1 != 0;
@@ -84,9 +85,29 @@ pub fn ports(app: &mut PicSimApp, ui: &mut egui::Ui) {
                         }
                         ui.end_row();
                     });
+                if port == 0 {
+                    ui.label(RichText::new("RA5..RA7 gibt es beim 16F84 nicht. Der Takt kommt über die eigenen Pins OSC1/OSC2.").small().weak());
+                }
                 ui.add_space(4.0);
             }
         });
+}
+
+/// Hinweis für Bits eines Ports, zu denen der PIC16F84 keinen Pin hat.
+/// PORTA ist beim 16F84/16F84A nur 5 Bit breit (RA0..RA4). OSC1/CLKIN
+/// (Pin 16) und OSC2/CLKOUT (Pin 15) sind eigene Oszillator-Pins und keine
+/// Portbits. RA6/RA7 als Oszillator-Pins gibt es erst bei z.B. 16F628A/16F88.
+pub fn missing_pin_hint(port: usize, bit: u8) -> String {
+    let name = format!("{}{bit}", PORT_NAMES[port]);
+    match (port, bit) {
+        (0, 6) | (0, 7) => format!(
+            "{name} gibt es beim PIC16F84 nicht: PORTA hat nur RA0..RA4. \
+             Der Quarz hängt an den eigenen Pins OSC1/CLKIN (16) und OSC2/CLKOUT (15), \
+             die keine Portbits sind. Liest man PORTA, sind die Bits 5..7 immer 0."
+        ),
+        (0, _) => format!("{name} gibt es beim PIC16F84 nicht: PORTA hat nur RA0..RA4, Bit 5..7 lesen sich als 0."),
+        _ => format!("{name} gibt es beim PIC16F84 nicht."),
+    }
 }
 
 // ----------------------------------------------------------------------
@@ -568,5 +589,20 @@ pub fn funcgen(app: &mut PicSimApp, ui: &mut egui::Ui) {
     }
     if ui.small_button("Einstellungen…").clicked() {
         app.dialogs.fgen = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ra6_ra7_explained_as_oscillator_pins() {
+        let h = missing_pin_hint(0, 6);
+        assert!(h.contains("RA6") && h.contains("OSC1") && h.contains("OSC2"), "{h}");
+        assert!(missing_pin_hint(0, 7).contains("RA7"));
+        assert!(missing_pin_hint(0, 5).contains("RA0..RA4"));
+        // Port B hat alle 8 Pins, Hinweise gibt es nur für fehlende Bits
+        assert_eq!(Cpu::port_width(1), 8);
     }
 }
