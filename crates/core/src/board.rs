@@ -252,10 +252,16 @@ impl Board {
     }
 
     /// Step over (F9): Unterprogramm in einem Rutsch ausführen.
-    /// Liefert `Budget`, wenn danach `run` weiterlaufen muss.
+    /// Liefert `Budget`, wenn danach `run` weiterlaufen muss. Das
+    /// Unterprogramm läuft dann wirklich Befehl für Befehl (mit Timer,
+    /// Interrupts und Breakpoints) in den Blöcken von `run`, bis es an die
+    /// Adresse hinter dem CALL mit derselben Stacktiefe zurückkehrt.
     pub fn step_over(&mut self) -> Stop {
         if is_call(self.cpu.current_op()) {
-            self.start(RunMode::StepOver { target: self.cpu.pc + 1, sp: self.cpu.sp });
+            // Wie set_pc: der PC hat 13 Bit, sonst würde das Ziel hinter
+            // 1FFFh nie erreicht und Step over liefe endlos
+            let target = self.cpu.pc.wrapping_add(1) & 0x1FFF;
+            self.start(RunMode::StepOver { target, sp: self.cpu.sp });
             Stop::Budget
         } else {
             self.step_in()
@@ -366,6 +372,100 @@ mod tests {
         assert_eq!(b.step_over(), Stop::Budget);
         assert_eq!(b.run(100), Stop::Done);
         assert_eq!(b.cpu.pc, 1);
+    }
+
+    /// Unterprogramm mit gut 20.000 Befehlen: Step over muss es ganz
+    /// ausführen, darf dabei nicht in einem einzigen `run`-Block hängen und
+    /// hält genau an der Folgeinstruktion des CALL.
+    #[test]
+    fn step_over_long_subroutine_stops_after_call() {
+        const INCF_0E: u16 = 0x0A8E; // incf 0x0e,f
+        const DECFSZ_0D: u16 = 0x0B8D; // decfsz 0x0d,f
+        const DECFSZ_0C: u16 = 0x0B8C; // decfsz 0x0c,f
+        let code = [
+            call(4),     // 0: CALL lang
+            NOP,         // 1: Folgeinstruktion, hier muss Step over halten
+            NOP,         // 2
+            goto(2),     // 3
+            0x3028,      // 4: lang  movlw 28h (40)
+            0x008C,      //  5:      movwf 0x0c
+            0x30FF,      //  6: aussen movlw FFh (255)
+            0x008D,      //  7:      movwf 0x0d
+            INCF_0E,     //  8: innen incf 0x0e,f  (zählt mit)
+            DECFSZ_0D,   //  9:      decfsz 0x0d,f
+            goto(8),     // 10:      goto innen
+            DECFSZ_0C,   // 11:      decfsz 0x0c,f
+            goto(6),     // 12:      goto aussen
+            RETURN,      // 13
+        ];
+        let mut b = board(&code);
+        assert_eq!(b.step_over(), Stop::Budget, "CALL startet einen Lauf");
+        assert!(b.running());
+
+        let mut blocks = 0;
+        let executed_at_stop;
+        loop {
+            blocks += 1;
+            assert!(blocks < 10_000, "Step over endet nicht");
+            let before = b.cpu.cycles;
+            let stop = b.run(97);
+            if stop != Stop::Budget {
+                assert_eq!(stop, Stop::Done);
+                executed_at_stop = b.cpu.cycles - before;
+                break;
+            }
+            // Zwischendurch steht der PC im Unterprogramm, der Lauf geht weiter
+            assert!(b.running());
+            assert!((4..=13).contains(&b.cpu.pc), "PC {:04X} außerhalb des Unterprogramms", b.cpu.pc);
+        }
+        assert!(executed_at_stop > 0);
+        assert!(blocks > 100, "in Blöcken ausgeführt, nicht auf einmal ({blocks})");
+        assert!(!b.running());
+        assert_eq!(b.cpu.pc, 1, "genau an der Folgeinstruktion");
+        assert_eq!(b.cpu.sp, 0, "Rücksprung vom Stack genommen");
+        // 40 * 255 Durchläufe der inneren Schleife wurden wirklich ausgeführt
+        assert_eq!(b.cpu.peek(0x0E), (40u32 * 255 % 256) as u8);
+        assert!(b.cpu.cycles > 20_000, "nur {} Zyklen", b.cpu.cycles);
+        assert_eq!(b.cpu.peek(0x0C), 0);
+
+        // Der nächste Step over auf einem normalen Befehl ist ein einzelner Schritt
+        assert_eq!(b.step_over(), Stop::Done);
+        assert_eq!(b.cpu.pc, 2);
+    }
+
+    #[test]
+    fn step_over_recursive_call_waits_for_own_return() {
+        // Unterprogramm ruft sich einmal selbst auf. Halten darf erst der
+        // äußere Rücksprung (gleiche Stacktiefe wie vor dem CALL).
+        // 0: call 3 / 1: nop / 2: goto 1 / 3: btfss 0x20,0 / 4: goto 6
+        // 5: return / 6: bsf 0x20,0 / 7: call 3 / 8: return
+        let code = [call(3), NOP, goto(1), 0x1C20, goto(6), RETURN, 0x1420, call(3), RETURN];
+        let mut b = board(&code);
+        assert_eq!(b.step_over(), Stop::Budget);
+        assert_eq!(b.run(1000), Stop::Done);
+        assert_eq!(b.cpu.pc, 1);
+        assert_eq!(b.cpu.sp, 0);
+    }
+
+    #[test]
+    fn step_over_stops_at_breakpoint_inside_subroutine() {
+        let mut b = board(&[call(3), NOP, goto(1), NOP, NOP, RETURN]);
+        b.toggle_breakpoint(4);
+        assert_eq!(b.step_over(), Stop::Budget);
+        assert_eq!(b.run(100), Stop::Breakpoint);
+        assert_eq!(b.cpu.pc, 4);
+    }
+
+    #[test]
+    fn step_over_call_at_end_of_pc_range() {
+        let mut b = board(&[]);
+        // CALL ganz oben im 13-Bit-Adressraum, Rücksprung auf 0000
+        b.cpu.prog[0x3FF] = call(0x10);
+        b.cpu.prog[0x10] = RETURN;
+        b.cpu.pc = 0x1FFF; // spiegelt auf 0x3FF im 1K-Programmspeicher
+        assert_eq!(b.step_over(), Stop::Budget);
+        assert_eq!(b.run(100), Stop::Done, "Ziel hinter 1FFFh wird erkannt");
+        assert_eq!(b.cpu.pc, 0);
     }
 
     #[test]
