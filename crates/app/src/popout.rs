@@ -17,6 +17,11 @@ fn icon() -> Arc<egui::IconData> {
     ICON.get_or_init(|| Arc::new(crate::icon())).clone()
 }
 
+/// Viewport des eigenen Fensters für den Bereich `key`.
+pub fn viewport_id(key: &str) -> egui::ViewportId {
+    egui::ViewportId::from_hash_of(("eigenes_fenster", key))
+}
+
 /// `content` in einem eigenen Fenster zeigen. Jedes Bild aufrufen, solange
 /// es offen sein soll. Liefert false, sobald es geschlossen wurde.
 pub fn show(ctx: &egui::Context, key: &str, title: &str, size: Vec2, content: impl FnOnce(&mut egui::Ui)) -> bool {
@@ -27,7 +32,7 @@ pub fn show(ctx: &egui::Context, key: &str, title: &str, size: Vec2, content: im
         .with_inner_size(size.max(Vec2::new(240.0, 160.0)))
         .with_min_inner_size([160.0, 100.0]);
     let mut content = Some(content);
-    ctx.show_viewport_immediate(egui::ViewportId::from_hash_of(("eigenes_fenster", key)), builder, |ui, class| {
+    ctx.show_viewport_immediate(viewport_id(key), builder, |ui, class| {
         egui::CentralPanel::default_margins().show(ui, |ui| {
             if let Some(c) = content.take() {
                 c(ui);

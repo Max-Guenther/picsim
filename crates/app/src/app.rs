@@ -685,12 +685,10 @@ impl PicSimApp {
                     self.dialogs.help = true;
                 }
                 if ui.button("Befehlsübersicht").clicked() {
-                    self.reference.open = true;
-                    self.reference.tab = Tab::Befehle;
+                    self.reference.show_tab(Tab::Befehle);
                 }
                 if ui.button("Registerübersicht (Tabelle 4-1)").clicked() {
-                    self.reference.open = true;
-                    self.reference.tab = Tab::Register;
+                    self.reference.show_tab(Tab::Register);
                 }
                 if ui.button("Nach Updates suchen").clicked() {
                     self.updater.check(ui.ctx(), true);
@@ -1086,8 +1084,7 @@ impl eframe::App for PicSimApp {
                     _ => self.save_ini(),
                 },
                 EditorAction::ShowReference => {
-                    self.reference.open = true;
-                    self.reference.tab = Tab::Befehle;
+                    self.reference.show_tab(Tab::Befehle);
                 }
             }
         }
@@ -1437,4 +1434,114 @@ mod tests {
         std::fs::remove_dir_all(&root).unwrap();
     }
 
+    /// Wo ein Text im letzten Bild gezeichnet wurde.
+    fn text_rects(out: &egui::FullOutput, text: &str) -> Vec<egui::Rect> {
+        out.shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.job.text == text => Some(t.visual_bounding_rect()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn frame_out(ctx: &egui::Context, app: &mut PicSimApp, events: Vec<egui::Event>) -> egui::FullOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.0, 1000.0))),
+            events,
+            ..Default::default()
+        };
+        let mut f = eframe::Frame::_new_kittest();
+        let mut out = ctx.run_ui(input, |ui| eframe::App::ui(app, ui, &mut f));
+        out.textures_delta.clear();
+        out
+    }
+
+    fn click(ctx: &egui::Context, app: &mut PicSimApp, at: egui::Pos2) {
+        use egui::{Event, PointerButton};
+        let button = |pressed| Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(ctx, app, vec![Event::PointerMoved(at)]);
+        frame(ctx, app, vec![button(true)]);
+        frame(ctx, app, vec![button(false)]);
+    }
+
+    fn befehle_button_check(popped: bool, free: bool, tag: &str) {
+        let root = std::env::temp_dir().join(format!("picsim-befehle-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ctx = egui::Context::default();
+        let mut app = machine_ctx(&root, "a", &ctx);
+        app.layout.set_free(free);
+        app.editor.open = true;
+        app.editor.popped = popped;
+        app.reference.tab = Tab::Register;
+        for _ in 0..4 {
+            frame(&ctx, &mut app, vec![]);
+        }
+        let out = frame_out(&ctx, &mut app, vec![]);
+        let rects = text_rects(&out, "Befehle");
+        assert_eq!(rects.len(), 1, "genau ein Button Befehle: {rects:?}");
+        assert!(!app.reference.open);
+        click(&ctx, &mut app, rects[0].center());
+        assert!(app.reference.open, "Klick öffnet das Nachschlagen");
+        assert!(app.reference.tab == Tab::Befehle, "mit dem Reiter Befehle");
+        // Das Fenster ist auch wirklich zu sehen und bleibt offen
+        for _ in 0..3 {
+            frame(&ctx, &mut app, vec![]);
+        }
+        let out = frame_out(&ctx, &mut app, vec![]);
+        assert!(app.reference.open, "bleibt offen");
+        assert!(!text_rects(&out, "Befehlssatz PIC16F84 (Datenblatt Tabelle 9-2)").is_empty(), "Befehlstabelle gezeichnet");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn befehle_button_opens_reference() {
+        befehle_button_check(false, true, "frei");
+        befehle_button_check(false, false, "fest");
+        befehle_button_check(true, false, "eigen");
+    }
+
+    /// Ist das Nachschlagen schon offen, aber vom Editor verdeckt oder
+    /// eingeklappt, holt der Button es nach vorne. Vorher passierte dann
+    /// scheinbar nichts.
+    #[test]
+    fn befehle_button_raises_hidden_reference() {
+        let root = std::env::temp_dir().join(format!("picsim-befehle-vorne-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ctx = egui::Context::default();
+        let mut app = machine_ctx(&root, "a", &ctx);
+        app.layout.set_free(true);
+        app.reference.open = true;
+        app.reference.tab = Tab::Register;
+        for _ in 0..3 {
+            frame(&ctx, &mut app, vec![]);
+        }
+        let ref_id = egui::Id::unique("nachschlagen_fenster");
+        let ref_layer = egui::LayerId::new(egui::Order::Foreground, ref_id);
+        let top = |ctx: &egui::Context| ctx.memory(|m| m.areas().top_layer_id(egui::Order::Foreground));
+        // Nachschlagen einklappen, dann Editor öffnen: der liegt darüber
+        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(&ctx, ref_id.with("collapsing"), true);
+        state.set_open(false);
+        state.store(&ctx);
+        app.editor.open = true;
+        for _ in 0..3 {
+            frame(&ctx, &mut app, vec![]);
+        }
+        let editor_rect = ctx.memory(|m| m.area_rect(egui::Id::unique("editor_window"))).unwrap();
+        ctx.memory_mut(|m| m.areas_mut().move_to_top(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("editor_window"))));
+        frame(&ctx, &mut app, vec![]);
+        assert_ne!(top(&ctx), Some(ref_layer), "Editor verdeckt das Nachschlagen");
+
+        let out = frame_out(&ctx, &mut app, vec![]);
+        let at = text_rects(&out, "Befehle").into_iter().find(|r| editor_rect.contains(r.center())).expect("Button im Editor").center();
+        click(&ctx, &mut app, at);
+        frame(&ctx, &mut app, vec![]);
+        assert!(app.reference.open && app.reference.tab == Tab::Befehle);
+        assert_eq!(top(&ctx), Some(ref_layer), "Nachschlagen liegt jetzt vorne");
+        let state = egui::collapsing_header::CollapsingState::load(&ctx, ref_id.with("collapsing")).unwrap();
+        assert!(state.is_open(), "und ist aufgeklappt");
+        let out = frame_out(&ctx, &mut app, vec![]);
+        assert!(!text_rects(&out, "Befehlssatz PIC16F84 (Datenblatt Tabelle 9-2)").is_empty(), "Befehlstabelle gezeichnet");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 }

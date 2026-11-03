@@ -18,6 +18,16 @@ pub struct Reference {
     filter: String,
     /// Steht in einem eigenen Fenster.
     pub popped: bool,
+    /// Beim nächsten Bild nach vorne holen (und aufklappen).
+    raise: bool,
+}
+
+fn window_id() -> egui::Id {
+    egui::Id::unique("nachschlagen_fenster")
+}
+
+fn viewport_id() -> egui::ViewportId {
+    crate::popout::viewport_id("nachschlagen")
 }
 
 /// Mnemonic, Operanden, Beschreibung, Zyklen, Opcode, Flags, Hinweise
@@ -211,20 +221,40 @@ fn words(entry: &str) -> Vec<&str> {
 }
 
 impl Reference {
+    /// Fenster mit dem Reiter `tab` öffnen. Ist es schon offen, aber von
+    /// einem anderen Fenster (z.B. dem Editor) verdeckt oder eingeklappt,
+    /// kommt es nach vorne, sonst sähe ein Klick wirkungslos aus.
+    pub fn show_tab(&mut self, tab: Tab) {
+        self.open = true;
+        self.tab = tab;
+        self.raise = true;
+    }
+
     /// Zeigt das Fenster. Liefert den Text, der in den Editor soll.
     pub fn show(&mut self, ctx: &egui::Context, cpu: &Cpu) -> Option<Insert> {
         let mut out = None;
         if !self.open {
+            self.raise = false;
             return out;
         }
+        let raise = std::mem::take(&mut self.raise);
         if self.popped {
+            if raise {
+                ctx.send_viewport_cmd_to(viewport_id(), egui::ViewportCommand::Focus);
+            }
             let still = crate::popout::show(ctx, "nachschlagen", "Nachschlagen", egui::vec2(1100.0, 700.0), |ui| {
                 self.body(ui, cpu, &mut out);
             });
             self.popped = still;
             return out;
         }
-        let id = egui::Id::unique("nachschlagen_fenster");
+        let id = window_id();
+        if raise {
+            let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id.with("collapsing"), true);
+            state.set_open(true);
+            state.store(ctx);
+            ctx.move_to_top(egui::LayerId::new(egui::Order::Foreground, id));
+        }
         let mut open = self.open;
         egui::Window::new("Nachschlagen")
             .id(id)
