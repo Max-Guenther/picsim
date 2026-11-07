@@ -1,5 +1,11 @@
 # Änderungen
 
+## 0.8.1
+
+- W-Register direkt ändern: Im Feld Spezialfunktionsregister lassen sich W-Reg, FSR, PCL, PCLATH und Status anklicken, Hexwert eintippen, Enter. Wie im Original
+- Siebensegmentanzeigen: Digitselect verhält sich jetzt wie an der echten Anzeige. Bei gemeinsamer Kathode leuchtet eine Stelle, wenn ihr Pin auf Low liegt, bei gemeinsamer Anode bei High. "Negiertes Digitselect" dreht das um, etwa wenn ein Transistor dazwischen sitzt. Bisher war Digitselect immer bei High aktiv, Programme für PicSimu zeigten dadurch genau die falschen Stellen an. Wer den Haken bei "Negiertes Digitselect" nur gesetzt hat, damit es bisher passte, nimmt ihn wieder heraus
+- Port A: Fährt man mit der Maus über RA5 bis RA7, steht dort, dass es diese Pins beim PIC16F84 nicht gibt
+
 ## 0.8.0
 
 - Bereiche in eigene Fenster holen: Jeder Bereich, der Editor und das Nachschlagen haben oben rechts einen Button mit Pfeil. Damit steht der Bereich in einem eigenen Fenster, das du auf einen zweiten Bildschirm oder im Splitscreen neben den Simulator legen kannst. Schließt du das Fenster, kommt der Bereich zurück ins Hauptfenster. Die Tasten F2 bis F10 gehen auch dort. PicSim merkt sich, welche Bereiche draußen stehen. Das gehört zum eigenen Bildschirm und wandert darum nicht mit ins Projekt
