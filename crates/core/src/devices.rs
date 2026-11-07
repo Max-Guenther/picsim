@@ -354,8 +354,12 @@ impl SevenSeg {
         s
     }
 
+    /// Digitselect wie an der echten Anzeige: gemeinsame Kathode leuchtet,
+    /// wenn ihr Anschluss auf Low liegt, gemeinsame Anode bei High.
+    /// Ein Transistor dazwischen dreht das um (`digit_inverted`).
     fn digit_active(&self, pins: &[u8; 5], d: usize) -> bool {
-        level(pins, self.cfg.digit[d]).is_some_and(|l| l != self.cfg.digit_inverted)
+        let active_high = self.cfg.common_anode != self.cfg.digit_inverted;
+        level(pins, self.cfg.digit[d]).is_some_and(|l| l == active_high)
     }
 
     pub fn observe(&mut self, pins: &[u8; 5], cycles: u32) {
@@ -571,14 +575,43 @@ mod tests {
         digit[1] = PinRef::port(0, 1);
         let cfg = SevenSegConfig { seg: std::array::from_fn(|i| PinRef::port(1, i as u8)), digit, ..Default::default() };
         let mut s = SevenSeg::new(cfg);
+        // Gemeinsame Kathode: Stelle aktiv bei Low.
         // Stelle 1 zeigt Segment a, Stelle 2 Segment b, je halbe Zeit
-        s.observe(&[0x01, 0x01, 0, 0, 0], 100);
-        s.observe(&[0x02, 0x02, 0, 0, 0], 100);
+        s.observe(&[0x02, 0x01, 0, 0, 0], 100);
+        s.observe(&[0x01, 0x02, 0, 0, 0], 100);
         let mut f = [[0.0; 8]; 8];
         s.take_frame(&[0; 5], &mut f);
         assert_eq!(f[0][0], 1.0);
         assert_eq!(f[0][1], 0.0);
         assert_eq!(f[1][1], 1.0);
+    }
+
+    /// Polarität von Segmenten und Digitselect je nach Anzeigentyp.
+    #[test]
+    fn sevenseg_polarity() {
+        let mut digit = [PinRef::Nc; 8];
+        digit[0] = PinRef::port(0, 0);
+        let seg = std::array::from_fn(|i| PinRef::port(1, i as u8));
+        // (gemeinsame Anode, negiertes Digitselect, RA0, PORTB) -> Segment a an
+        let cases = [
+            (false, false, 0x00, 0x01),
+            (false, true, 0x01, 0x01),
+            (true, false, 0x01, 0xFE),
+            (true, true, 0x00, 0xFE),
+        ];
+        for (ca, inv, ra, rb) in cases {
+            let cfg = SevenSegConfig { seg, digit, common_anode: ca, digit_inverted: inv, ..Default::default() };
+            let mut s = SevenSeg::new(cfg);
+            let mut f = [[0.0; 8]; 8];
+            s.observe(&[ra, rb, 0, 0, 0], 100);
+            s.take_frame(&[0; 5], &mut f);
+            assert_eq!(f[0][0], 1.0, "a an bei ca={ca} inv={inv}");
+            assert_eq!(f[0][1], 0.0, "b aus bei ca={ca} inv={inv}");
+            // Stelle mit falschem Pegel bleibt dunkel
+            s.observe(&[ra ^ 1, rb, 0, 0, 0], 100);
+            s.take_frame(&[0; 5], &mut f);
+            assert_eq!(f[0][0], 0.0, "Stelle aus bei ca={ca} inv={inv}");
+        }
     }
 
     #[test]

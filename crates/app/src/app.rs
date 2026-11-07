@@ -55,6 +55,8 @@ pub struct PicSimApp {
     /// RAM-Inhalt vor dem letzten Schritt, für die Markierung von Änderungen.
     pub prev_ram: [u8; 256],
     pub ram_edit: Option<(u8, String)>,
+    /// Offenes Eingabefeld für das W-Register.
+    pub w_edit: Option<String>,
     pub seg_frame: [[f32; 8]; 8],
     pub dialogs: Dialogs,
     pub editor: Editor,
@@ -110,6 +112,7 @@ impl PicSimApp {
             scroll_to_pc: true,
             prev_ram: [0; 256],
             ram_edit: None,
+            w_edit: None,
             seg_frame: [[0.0; 8]; 8],
             dialogs: Dialogs::default(),
             editor: Editor::default(),

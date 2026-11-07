@@ -107,6 +107,29 @@ fn ram_cell(app: &mut PicSimApp, ui: &mut egui::Ui, addr: u8) {
     ));
 }
 
+/// Das W-Register, anklickbar wie eine Speicherzelle.
+fn w_cell(app: &mut PicSimApp, ui: &mut egui::Ui) {
+    if let Some(text) = &mut app.w_edit {
+        match hex_edit(ui, text) {
+            CellEdit::Open => {}
+            CellEdit::Commit(v) => {
+                if let Some(v) = v {
+                    app.board.cpu.w = v;
+                }
+                app.w_edit = None;
+            }
+            CellEdit::Cancel => app.w_edit = None,
+        }
+        return;
+    }
+    let v = app.board.cpu.w;
+    let r = ui.add(egui::Label::new(RichText::new(format!("{v:02X}")).monospace()).sense(Sense::click()));
+    if r.clicked() {
+        app.w_edit = Some(format!("{v:02X}"));
+    }
+    r.on_hover_text(format!("W-Register: {v} dezimal, {v:08b}b. Klicken zum Ändern"));
+}
+
 /// Acht anklickbare Bits eines Registers.
 fn bit_row(app: &mut PicSimApp, ui: &mut egui::Ui, id: &str, addr: u8, names: [&str; 8]) {
     let v = app.board.cpu.peek(addr);
@@ -155,13 +178,6 @@ pub fn sfr(app: &mut PicSimApp, ui: &mut egui::Ui) {
 
 fn sfr_content(app: &mut PicSimApp, ui: &mut egui::Ui) {
     let cpu = &app.board.cpu;
-    let visible = [
-        ("W-Reg", format!("{:02X}", cpu.w)),
-        ("FSR", format!("{:02X}", cpu.peek(0x04))),
-        ("PCL", format!("{:02X}", cpu.peek(0x02))),
-        ("PCLATH", format!("{:02X}", cpu.peek(0x0A))),
-        ("Status", format!("{:02X}", cpu.status())),
-    ];
     let hidden = [
         ("PC", format!("{:04X}", cpu.pc)),
         ("Stackp.", format!("{}", cpu.sp)),
@@ -170,7 +186,17 @@ fn sfr_content(app: &mut PicSimApp, ui: &mut egui::Ui) {
         ("WDT", format!("{:.1} ms", cpu.wdt_us / 1000.0)),
     ];
     ui.columns(2, |cols| {
-        reg_grid(&mut cols[0], "sfr_visible", &visible);
+        // Sichtbare Register lassen sich wie im Datenspeicher anklicken und ändern
+        egui::Grid::new("sfr_visible").show(&mut cols[0], |ui| {
+            ui.label("W-Reg");
+            w_cell(app, ui);
+            ui.end_row();
+            for (name, addr) in [("FSR", 0x04), ("PCL", 0x02), ("PCLATH", 0x0A), ("Status", STATUS)] {
+                ui.label(name);
+                ram_cell(app, ui, addr);
+                ui.end_row();
+            }
+        });
         reg_grid(&mut cols[1], "sfr_hidden", &hidden);
     });
     ui.horizontal(|ui| {

@@ -141,7 +141,8 @@ impl Dialogs {
                 }
             });
             ui.separator();
-            changed |= ui.checkbox(&mut cfg.common_anode, "Gemeinsame Anode (Segmente aktiv bei Low)").changed();
+            ui.label(RichText::new("Ohne Haken: gemeinsame Kathode, Segmente aktiv bei High, Digit bei Low.").small());
+            changed |= ui.checkbox(&mut cfg.common_anode, "Gemeinsame Anode (Segmente aktiv bei Low, Digit bei High)").changed();
             changed |= ui.checkbox(&mut cfg.digit_inverted, "Negiertes Digitselect (z.B. über Transistor)").changed();
             ui.horizontal(|ui| {
                 ui.label("Farbe");
