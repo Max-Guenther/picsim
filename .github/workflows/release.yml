@@ -17,7 +17,7 @@ jobs:
         include:
           - os: ubuntu-22.04
             asset: picsim-linux-x86_64.tar.gz
-          - os: macos-14
+          - os: macos-15
             asset: picsim-macos-aarch64.tar.gz
           - os: windows-latest
             asset: picsim-windows-x86_64.zip
