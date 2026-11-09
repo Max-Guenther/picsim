@@ -389,34 +389,46 @@ impl Editor {
         action
     }
 
+    /// Buttons oben im Editor.
+    fn toolbar(&mut self, ui: &mut egui::Ui, action: &mut Option<EditorAction>) {
+        if ui.button("Neu").clicked() {
+            self.ask_or_run(Pending::New);
+        }
+        if ui.button("Öffnen…").clicked() {
+            self.ask_or_run(Pending::Open);
+        }
+        if ui.button("Speichern").on_hover_text("Strg+S").clicked() && self.save(AfterSave::Saved) {
+            *action = Some(EditorAction::Saved);
+        }
+        if ui.button("Speichern unter…").clicked() {
+            self.save_as(AfterSave::Saved);
+        }
+        ui.separator();
+        let asm_btn = egui::Button::new(RichText::new("Assemblieren & Laden").strong());
+        if ui.add(asm_btn).on_hover_text("F5 oder Strg+B").clicked() {
+            *action = self.assemble();
+        }
+        if ui.button("Befehle").on_hover_text("Befehlsübersicht und Registertabelle").clicked() {
+            *action = Some(EditorAction::ShowReference);
+        }
+        ui.separator();
+        ui.label("Tabbreite");
+        ui.add(egui::DragValue::new(&mut self.tab_width).range(2..=MAX_TAB))
+            .on_hover_text("Abstand der Tabstopps in Zeichen");
+    }
+
     /// Inhalt des Editorfensters.
     fn body(&mut self, ui: &mut egui::Ui) -> Option<EditorAction> {
         let mut action = None;
-        ui.horizontal(|ui| {
-            if ui.button("Neu").clicked() {
-                self.ask_or_run(Pending::New);
-            }
-            if ui.button("Öffnen…").clicked() {
-                self.ask_or_run(Pending::Open);
-            }
-            if ui.button("Speichern").on_hover_text("Strg+S").clicked() && self.save(AfterSave::Saved) {
-                action = Some(EditorAction::Saved);
-            }
-            if ui.button("Speichern unter…").clicked() {
-                self.save_as(AfterSave::Saved);
-            }
-            ui.separator();
-            let asm_btn = egui::Button::new(RichText::new("Assemblieren & Laden").strong());
-            if ui.add(asm_btn).on_hover_text("F5 oder Strg+B").clicked() {
-                action = self.assemble();
-            }
-            if ui.button("Befehle").on_hover_text("Befehlsübersicht und Registertabelle").clicked() {
-                action = Some(EditorAction::ShowReference);
-            }
-            ui.separator();
-            ui.label("Tabbreite");
-            ui.add(egui::DragValue::new(&mut self.tab_width).range(2..=MAX_TAB))
-                .on_hover_text("Abstand der Tabstopps in Zeichen");
+        // Im kleinen eigenen Fenster passen nicht alle Buttons nebeneinander:
+        // dann seitlich scrollen (Scrollbalken oder einfach das Mausrad)
+        ui.scope(|ui| {
+            ui.style_mut().always_scroll_the_only_direction = true;
+            // fester Balken unter den Buttons statt eines schwebenden darüber
+            ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
+            egui::ScrollArea::horizontal().id_salt("werkzeuge").show(ui, |ui| {
+                ui.horizontal(|ui| self.toolbar(ui, &mut action));
+            });
         });
         if !self.message.is_empty() {
             let ok = self.errors.iter().all(|e| e.warning);

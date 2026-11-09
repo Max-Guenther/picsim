@@ -1,5 +1,9 @@
 # Änderungen
 
+## Unveröffentlicht
+
+- Editor im eigenen Fenster: Ist das Fenster zu schmal für alle Buttons oben, lässt sich die Leiste seitlich scrollen, mit dem Mausrad über den Buttons oder dem Balken darunter. Bisher waren die hinteren Buttons (Assemblieren, Befehle, Tabbreite) dann nicht erreichbar
+
 ## 0.8.2
 
 - Port A hat jetzt wie in PicSimu 8 Bit, RA0 bis RA7. RA5 bis RA7 lassen sich als Ein- und Ausgang benutzen, in der Port-Ansicht umschalten und allen Bauteilen (LEDs, Schalter, LCD, Siebensegment …) zuordnen. TRISA steht nach dem Reset auf FFh. Beim echten PIC16F84 gibt es nur RA0 bis RA4, Programme, die RA5 bis RA7 benutzen, laufen also nur im Simulator so
