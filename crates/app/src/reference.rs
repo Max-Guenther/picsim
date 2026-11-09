@@ -137,7 +137,7 @@ const REGISTERS_BANK0: &[RegRow] = &[
     ("02h", "PCL", PCL_TEXT, "0000 0000", "0000 0000"),
     ("03h", "STATUS", STATUS_BITS, "0001 1xxx", "000q quuu"),
     ("04h", "FSR", FSR_TEXT, "xxxx xxxx", "uuuu uuuu"),
-    ("05h", "PORTA", RegBits::Bits(["—", "—", "—", "RA4/T0CKI", "RA3", "RA2", "RA1", "RA0"]), "---x xxxx", "---u uuuu"),
+    ("05h", "PORTA", RegBits::Bits(["RA7", "RA6", "RA5", "RA4/T0CKI", "RA3", "RA2", "RA1", "RA0"]), "xxxx xxxx", "uuuu uuuu"),
     ("06h", "PORTB", RegBits::Bits(["RB7", "RB6", "RB5", "RB4", "RB3", "RB2", "RB1", "RB0/INT"]), "xxxx xxxx", "uuuu uuuu"),
     ("07h", "", FREE_TEXT, "---- ----", "---- ----"),
     ("08h", "EEDATA", RegBits::Text("EEPROM-Datenregister"), "xxxx xxxx", "uuuu uuuu"),
@@ -152,7 +152,7 @@ const REGISTERS_BANK1: &[RegRow] = &[
     ("82h", "PCL", PCL_TEXT, "0000 0000", "0000 0000"),
     ("83h", "STATUS", STATUS_BITS, "0001 1xxx", "000q quuu"),
     ("84h", "FSR", FSR_TEXT, "xxxx xxxx", "uuuu uuuu"),
-    ("85h", "TRISA", RegBits::Text("— — — Richtung Port A (1 = Eingang)"), "---1 1111", "---1 1111"),
+    ("85h", "TRISA", RegBits::Text("Richtung Port A (1 = Eingang). Beim echten 16F84 nur RA0..RA4, im Simulator wie in PicSimu RA0..RA7"), "1111 1111", "1111 1111"),
     ("86h", "TRISB", RegBits::Text("Richtung Port B (1 = Eingang)"), "1111 1111", "1111 1111"),
     ("87h", "", FREE_TEXT, "---- ----", "---- ----"),
     ("88h", "EECON1", RegBits::Bits(["—", "—", "—", "EEIF", "WRERR", "WREN", "WR", "RD"]), "---0 x000", "---0 q000"),
@@ -445,7 +445,8 @@ mod tests {
         assert_eq!(bit_insert("PORTB", 0, "RB0/INT").as_deref(), Some("PORTB,0"));
         assert_eq!(bit_insert("INTCON", 7, "GIE").as_deref(), Some("GIE"));
         assert_eq!(bit_insert("EECON1", 1, "WR").as_deref(), Some("WR_"));
-        assert_eq!(bit_insert("PORTA", 7, "—"), None);
+        assert_eq!(bit_insert("PORTA", 7, "RA7").as_deref(), Some("PORTA,7"));
+        assert_eq!(bit_insert("EECON1", 7, "—"), None);
         // Alles, was eingefügt wird, muss der Assembler auch kennen
         for (_, name, bits, _, _) in REGISTERS_BANK0.iter().chain(REGISTERS_BANK1) {
             if let RegBits::Bits(b) = bits {

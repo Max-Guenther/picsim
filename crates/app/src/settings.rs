@@ -23,7 +23,7 @@ pub struct Dialogs {
 /// Alle Pins, die man anschließen kann.
 fn pin_choices() -> Vec<PinRef> {
     let mut v = vec![PinRef::Nc, PinRef::Vdd, PinRef::Gnd];
-    v.extend((0..5).map(|b| PinRef::port(0, b)));
+    v.extend((0..8).map(|b| PinRef::port(0, b)));
     v.extend((0..8).map(|b| PinRef::port(1, b)));
     v
 }

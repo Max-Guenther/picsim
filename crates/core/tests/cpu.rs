@@ -48,7 +48,7 @@ fn power_on_values() {
     let cpu = Cpu::new();
     assert_eq!(cpu.status(), 0x18);
     assert_eq!(cpu.peek(OPTION), 0xFF);
-    assert_eq!(cpu.peek(TRISA), 0x1F);
+    assert_eq!(cpu.peek(TRISA), 0xFF);
     assert_eq!(cpu.peek(TRISB), 0xFF);
     assert_eq!(cpu.pc, 0);
 }
@@ -331,4 +331,21 @@ fn testo01_runs() {
     cpu.set_input(1, 0, true);
     steps(&mut cpu, 6);
     assert!(!cpu.pin(0, 0));
+}
+
+/// Port A hat wie in PicSimu 8 Bit, RA5..RA7 eingeschlossen.
+#[test]
+fn porta_has_eight_bits() {
+    // Eingang: nach dem Reset ist alles Eingang
+    let mut cpu = Cpu::new();
+    cpu.set_input(0, 7, true);
+    cpu.set_input(0, 6, true);
+    assert_eq!(cpu.peek(PORTA) & 0xC0, 0xC0);
+
+    // Ausgang: bsf STATUS,RP0; clrf TRISA; bcf STATUS,RP0; movlw 0xE0; movwf PORTA
+    let mut cpu = cpu_with(&[0x1683, 0x0185, 0x1283, 0x30E0, 0x0085]);
+    steps(&mut cpu, 5);
+    assert_eq!(cpu.peek(TRISA), 0x00);
+    assert_eq!(cpu.pins()[0], 0xE0);
+    assert_eq!(cpu.peek(PORTA), 0xE0);
 }

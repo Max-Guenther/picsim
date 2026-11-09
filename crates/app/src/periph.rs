@@ -61,10 +61,7 @@ pub fn ports(app: &mut PicSimApp, ui: &mut egui::Ui) {
                         ui.label("Pin");
                         for bit in (0..8u8).rev() {
                             if bit >= width {
-                                ui.label(RichText::new("-").monospace().weak()).on_hover_text(format!(
-                                    "{}{bit} gibt es beim PIC16F84 nicht (Port A hat nur RA0 bis RA4)",
-                                    PORT_NAMES[port]
-                                ));
+                                ui.label(RichText::new("-").monospace().weak());
                                 continue;
                             }
                             let on = pins >> bit & 1 != 0;

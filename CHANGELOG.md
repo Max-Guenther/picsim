@@ -1,10 +1,13 @@
 # Änderungen
 
+## 0.8.2
+
+- Port A hat jetzt wie in PicSimu 8 Bit, RA0 bis RA7. RA5 bis RA7 lassen sich als Ein- und Ausgang benutzen, in der Port-Ansicht umschalten und allen Bauteilen (LEDs, Schalter, LCD, Siebensegment …) zuordnen. TRISA steht nach dem Reset auf FFh. Beim echten PIC16F84 gibt es nur RA0 bis RA4, Programme, die RA5 bis RA7 benutzen, laufen also nur im Simulator so
+
 ## 0.8.1
 
 - W-Register direkt ändern: Im Feld Spezialfunktionsregister lassen sich W-Reg, FSR, PCL, PCLATH und Status anklicken, Hexwert eintippen, Enter. Wie im Original
 - Siebensegmentanzeigen: Digitselect verhält sich jetzt wie an der echten Anzeige. Bei gemeinsamer Kathode leuchtet eine Stelle, wenn ihr Pin auf Low liegt, bei gemeinsamer Anode bei High. "Negiertes Digitselect" dreht das um, etwa wenn ein Transistor dazwischen sitzt. Bisher war Digitselect immer bei High aktiv, Programme für PicSimu zeigten dadurch genau die falschen Stellen an. Wer den Haken bei "Negiertes Digitselect" nur gesetzt hat, damit es bisher passte, nimmt ihn wieder heraus
-- Port A: Fährt man mit der Maus über RA5 bis RA7, steht dort, dass es diese Pins beim PIC16F84 nicht gibt
 
 ## 0.8.0
 

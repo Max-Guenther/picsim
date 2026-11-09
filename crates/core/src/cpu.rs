@@ -183,7 +183,7 @@ impl Cpu {
         self.ram[PCLATH as usize] = 0;
         self.ram[INTCON as usize] &= 0x01;
         self.ram[OPTION as usize] = 0xFF;
-        self.ram[TRISA as usize] = 0x1F;
+        self.ram[TRISA as usize] = 0xFF;
         self.ram[TRISB as usize] = 0xFF;
         self.ram[EECON1 as usize] &= 0x08;
         self.ram[PCL as usize] = 0;
@@ -217,7 +217,7 @@ impl Cpu {
     pub fn peek(&self, addr: u8) -> u8 {
         match Self::map(addr) {
             None => 0,
-            Some(PORTA) => self.pins()[0] & 0x1F,
+            Some(PORTA) => self.pins()[0],
             Some(PORTB) => self.pins()[1],
             Some(INDF) => 0,
             Some(EECON2) => 0,
@@ -229,7 +229,7 @@ impl Cpu {
     pub fn poke(&mut self, addr: u8, value: u8) {
         match Self::map(addr) {
             None | Some(INDF) => {}
-            Some(PORTA) => self.latch[0] = value & 0x1F,
+            Some(PORTA) => self.latch[0] = value,
             Some(PORTB) => self.latch[1] = value,
             Some(PCL) => {
                 self.ram[PCL as usize] = value;
@@ -276,7 +276,7 @@ impl Cpu {
                     self.prescaler = 0;
                 }
             }
-            PORTA => self.latch[0] = value & 0x1F,
+            PORTA => self.latch[0] = value,
             PORTB => self.latch[1] = value,
             STATUS => {
                 // TO und PD sind nur lesbar, vom Befehl gesetzte Flags gewinnen
@@ -337,17 +337,17 @@ impl Cpu {
 
     pub fn tris(&self, port: usize) -> u8 {
         match port {
-            0 => self.ram[TRISA as usize] | 0xE0,
+            0 => self.ram[TRISA as usize],
             1 => self.ram[TRISB as usize],
             _ => 0xFF,
         }
     }
 
-    /// Anzahl der Pins eines Ports beim 16F84.
+    /// Anzahl der Pins eines Ports. Port A hat wie in PicSimu 8 Bit
+    /// (RA0..RA7), der echte 16F84 nur RA0..RA4.
     pub fn port_width(port: usize) -> u8 {
         match port {
-            0 => 5,
-            1 => 8,
+            0 | 1 => 8,
             _ => 0,
         }
     }
@@ -359,7 +359,6 @@ impl Cpu {
             let t = self.tris(i);
             *v = (self.latch[i] & !t) | (self.ext[i] & t);
         }
-        p[0] &= 0x1F;
         p
     }
 
