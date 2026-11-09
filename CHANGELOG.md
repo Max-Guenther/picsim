@@ -8,6 +8,7 @@
 
 - W-Register direkt ändern: Im Feld Spezialfunktionsregister lassen sich W-Reg, FSR, PCL, PCLATH und Status anklicken, Hexwert eintippen, Enter. Wie im Original
 - Siebensegmentanzeigen: Digitselect verhält sich jetzt wie an der echten Anzeige. Bei gemeinsamer Kathode leuchtet eine Stelle, wenn ihr Pin auf Low liegt, bei gemeinsamer Anode bei High. "Negiertes Digitselect" dreht das um, etwa wenn ein Transistor dazwischen sitzt. Bisher war Digitselect immer bei High aktiv, Programme für PicSimu zeigten dadurch genau die falschen Stellen an. Wer den Haken bei "Negiertes Digitselect" nur gesetzt hat, damit es bisher passte, nimmt ihn wieder heraus
+- Port A: Fährt man mit der Maus über RA5 bis RA7, steht dort, dass es diese Pins beim PIC16F84 nicht gibt (in 0.8.2 durch echte RA5 bis RA7 ersetzt)
 
 ## 0.8.0
 
