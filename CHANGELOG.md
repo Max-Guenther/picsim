@@ -1,6 +1,6 @@
 # Änderungen
 
-## Unveröffentlicht
+## 0.8.3
 
 - Editor im eigenen Fenster: Ist das Fenster zu schmal für alle Buttons oben, lässt sich die Leiste seitlich scrollen, mit dem Mausrad über den Buttons oder dem Balken darunter. Bisher waren die hinteren Buttons (Assemblieren, Befehle, Tabbreite) dann nicht erreichbar
 
